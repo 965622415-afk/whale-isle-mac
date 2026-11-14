@@ -36,6 +36,10 @@ namespace WhaleLauncher
         private bool _refreshing;
         private bool _memoryNoticeChecked;
 
+        // 官网和赞助入口固定在侧栏底部；链接写死，不依赖内核或网络配置，断网时浏览器自行提示。
+        private const string OfficialSite = "https://bot.zyyc.cc/";
+        private const string SponsorPage = "https://afdian.com/a/Banan1ce";
+
         private static readonly NavEntry[] NavKeys =
         {
             new NavEntry { Key = "状态", Label = "状态", Icon = Geometry.Parse("M4 4h7v7H4z M13 4h7v4h-7z M13 10h7v10h-7z M4 13h7v7H4z") },
@@ -556,6 +560,22 @@ namespace WhaleLauncher
         }
 
         private void OnSettings(object sender, RoutedEventArgs e) => GoTo("设置");
+
+        private void OnOpenWebsite(object sender, RoutedEventArgs e) => OpenExternal(OfficialSite, "打开官网失败");
+
+        private void OnOpenSponsor(object sender, RoutedEventArgs e) => OpenExternal(SponsorPage, "打开赞助页面失败");
+
+        private void OpenExternal(string url, string failureTitle)
+        {
+            try
+            {
+                Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+            }
+            catch (Exception ex)
+            {
+                AppDialog.Show(this, failureTitle + "：\n" + ex.Message + "\n\n可以手动在浏览器打开：" + url, failureTitle);
+            }
+        }
 
         // ── 顶栏动作 ────────────────────────────────────────────
         private bool AnythingRunning => _sup.NodeRunning || _sup.BridgeRunning;

@@ -441,7 +441,7 @@ function loadConfig({ root = projectRoot(), env = process.env, readOnly = false 
       }
       fromFile = parsed;
     } catch (err) {
-      configError = require('./redact').redactSecrets((err && err.message) || err);
+      configError = require('./errors').errorMessage(err, 'config.json 读取失败');
       fromFile = {};
     }
   }

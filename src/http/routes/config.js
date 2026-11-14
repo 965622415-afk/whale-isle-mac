@@ -2,6 +2,7 @@
 
 const { publicConfig, applyConfigPatch, resetConfig } = require('../../infra/configPatch');
 const { statusPayload } = require('../../services/status');
+const { errorMessage } = require('../../infra/errors');
 const { json, readBody } = require('../util');
 
 module.exports = function register(router) {
@@ -30,7 +31,7 @@ module.exports = function register(router) {
         status: statusPayload(runtime),
       });
     } catch (err) {
-      return json(res, 400, { ok: false, error: String((err && err.message) || err) });
+      return json(res, 400, { ok: false, error: errorMessage(err, '读取配置失败') });
     }
   });
 
@@ -52,7 +53,7 @@ module.exports = function register(router) {
       });
     } catch (err) {
       const code = err && err.statusCode ? err.statusCode : 400;
-      return json(res, code, { ok: false, error: String((err && err.message) || err) });
+      return json(res, code, { ok: false, error: errorMessage(err, '恢复默认失败') });
     }
   });
 };
