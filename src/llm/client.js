@@ -907,7 +907,7 @@ class DeepSeekClient {
       return { ...base, ok: true, ms: Date.now() - started, sample: String(sample).slice(0, 60) };
     } catch (err) {
       const message =
-        err instanceof LlmError ? err.userMessage : '呜…连接测试失败：' + (err && err.message ? err.message : String(err));
+        err instanceof LlmError ? err.userMessage : '呜…连接测试失败：' + ((err && err.message) || '未知错误');
       // 把原始错误也带出来，方便判断是额度、Key 还是网络
       const detail = (err && (err.detail || err.message)) || '';
       return { ...base, ok: false, ms: Date.now() - started, message, detail: String(detail).slice(0, 300) };

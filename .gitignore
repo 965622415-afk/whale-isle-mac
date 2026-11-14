@@ -69,3 +69,6 @@ runtime/
 /tests/plugin-market/bin/
 /tests/plugin-market/obj/
 WhaleLauncher.exe.old
+
+# 本地宣传片制作工程（素材体积很大，只留在本机）
+promo-video/

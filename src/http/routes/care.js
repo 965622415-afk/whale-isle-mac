@@ -10,6 +10,7 @@
 
 const care = require('../../services/care');
 const { careForChat } = require('../../services/careChat');
+const { errorMessage } = require('../../infra/errors');
 const { json } = require('../util');
 const { describeError } = require('../../infra/errors');
 
@@ -54,7 +55,7 @@ module.exports = function register(router) {
       return json(res, 200, out);
     } catch (err) {
       runtime.logger.warn('生成搭话失败：' + describeError(err));
-      return json(res, 500, { ok: false, error: String((err && err.message) || err) });
+      return json(res, 500, { ok: false, error: errorMessage(err) });
     }
   });
 };
