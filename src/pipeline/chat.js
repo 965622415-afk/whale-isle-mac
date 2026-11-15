@@ -868,8 +868,8 @@ class Bot {
     let searchResult = pluginSearch?.search || await searchService.search({
       text: clean.text,
       history: () => this.recentHeard({ msg, key }).filter(line => line !== clean.text),
-      llm: this.llm, config: this.config.websearch || {}, now: this.now(),
-      timeZone: time.resolveTimeZone(this.config),
+      llm: this.llm, config: this.config.websearch || {}, dataDir: this.config.paths?.dataDir || 'data',
+      now: this.now(), timeZone: time.resolveTimeZone(this.config),
       trace: (stage, data) => this.logger?.info('[search] stage=' + stage + ' ' + JSON.stringify(data)),
     });
     if (this.messagePlugins.supports?.('chat.search_result')) {

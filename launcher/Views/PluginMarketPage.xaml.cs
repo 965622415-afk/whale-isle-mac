@@ -246,12 +246,18 @@ namespace WhaleLauncher.Views
                 hint.Text = "没有可预览的人设正文。";
                 return;
             }
-            hint.Text = "预览人设正文。应用后会替换当前的自定义提示词。";
+            hint.Text = "应用人设及其表达、长度设置。应用后可在人设页直接修改，本地修改不影响原始下载包。";
             panel.Children.Add(new TextBox
             {
                 Text = PluginMarket.SafeMultiline(prompt.GetString()), IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
                 MaxHeight = 280, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
                 Margin = new Thickness(0, 8, 0, 8)
+            });
+            panel.Children.Add(new TextBox
+            {
+                Text = patch.GetRawText(), IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
+                MaxHeight = 180, VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Margin = new Thickness(0, 0, 0, 8)
             });
             var apply = new Button
             {

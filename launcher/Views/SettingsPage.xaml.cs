@@ -104,12 +104,22 @@ namespace WhaleLauncher.Views
             }},
             new SectionSpec { Title = "联网与链接", Fields =
             {
-                new FieldSpec { Path = "websearch.enabled", Label = "联网搜索", Kind = "bool" },
+                // 本地搜索强制开启，不再提供“联网搜索”开关；API 搜索在“API 接入”页签里。
                 new FieldSpec { Path = "websearch.city", Label = "搜索城市", Kind = "text" },
                 new FieldSpec { Path = "websearch.timeoutMs", Label = "搜索超时(毫秒)", Kind = "num", Min = 1000, Max = 30000 },
                 new FieldSpec { Path = "links.enabled", Label = "解析聊天里的链接", Kind = "bool" },
                 new FieldSpec { Path = "links.timeoutMs", Label = "链接超时(毫秒)", Kind = "num", Min = 1000, Max = 30000 },
                 new FieldSpec { Path = "links.cacheMinutes", Label = "链接缓存(分钟)", Kind = "num", Min = 0, Max = 1440 },
+            }},
+            new SectionSpec { Title = "对话与维护", Note = "实现与维护选项，不属于角色性格。按需展开调整；原有配置保持，保存后按各项说明生效。", Fields =
+            {
+                new FieldSpec { Path = "features.envContext", Label = "提供环境信息", Kind = "bool", Hint = "向模型提供本机环境、时区与已配置地点；关闭后不提供环境块" },
+                new FieldSpec { Path = "features.relations", Label = "加载群聊关系", Kind = "bool", Hint = "按需提供人物关系资料，不改变角色性格" },
+                new FieldSpec { Path = "features.groupAddressGuard", Label = "群聊发言对象检查", Kind = "bool", Hint = "避免把群友之间的话认成对机器人说的；建议保持开启" },
+                new FieldSpec { Path = "features.fightQuoteCheck", Label = "反击原话核对", Kind = "bool", Hint = "反击前核对原话依据，不等于开启顶嘴人格" },
+                new FieldSpec { Path = "features.staticSystem", Label = "稳定提示词前缀", Kind = "bool", Hint = "只调整本轮状态的位置以便服务商缓存，不改变人格与设置含义" },
+                new FieldSpec { Path = "features.memorySnapshot", Label = "自动记忆快照", Kind = "bool", Hint = "启动和定时创建备份；关闭不删除已有备份" },
+                new FieldSpec { Path = "features.mediaCleanup", Label = "启动时清理媒体缓存", Kind = "bool", Hint = "按缓存保留策略清理；下次启动生效" },
             }},
             new SectionSpec { Title = "高级", Note = "改完要重启的项都在这里（对话预算和时区例外，改完立刻生效）。", Fields =
             {
@@ -183,7 +193,7 @@ namespace WhaleLauncher.Views
         {
             var card = Card("高级模式", "群聊、微信数据与管道、联网与链接、服务端口。平时不用动，点一下对应页签再改。", out var body);
 
-            var strip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 0) };
+            var strip = new WrapPanel { Margin = new Thickness(0, 0, 0, 0) };
             body.Children.Add(strip);
 
             var specs = Specs();
@@ -1358,26 +1368,30 @@ namespace WhaleLauncher.Views
 
         private Border BuildModelSection()
         {
-            var card = Card("模型", "聊天、看图、语音分三页签。聊天模型自己能看图时，看图模型自动跟随；手动指定过就以手动为准；看图也可以选「自定义」，接口地址和模型都自己填（能一键从聊天复制）。", out var body);
+            var card = Card("API 接入", "聊天、看图、语音识别、搜索分页签。聊天模型自己能看图时，看图模型自动跟随；语音识别关闭后不下载、不请求；搜索 API 只有一个总开关，关闭会清空列表并删除搜索 Key。", out var body);
 
             var chatTab = MakeTab("聊天（文本）", out var chatBadge);
             var visionTab = MakeTab("看图（视觉）", out var visionBadge);
             var voiceTab = MakeTab("语音（识别）", out var voiceBadge);
+            var searchTab = MakeTab("搜索", out var searchBadge);
             var strip = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 14) };
             strip.Children.Add(chatTab);
             strip.Children.Add(visionTab);
             strip.Children.Add(voiceTab);
+            strip.Children.Add(searchTab);
             body.Children.Add(strip);
 
             var chatPanel = new StackPanel();
             var visionPanel = new StackPanel { Visibility = Visibility.Collapsed };
             var voicePanel = new StackPanel { Visibility = Visibility.Collapsed };
+            var searchPanel = new StackPanel { Visibility = Visibility.Collapsed };
             body.Children.Add(chatPanel);
             body.Children.Add(visionPanel);
             body.Children.Add(voicePanel);
+            body.Children.Add(searchPanel);
 
-            var tabs = new[] { chatTab, visionTab, voiceTab };
-            var panels = new[] { chatPanel, visionPanel, voicePanel };
+            var tabs = new[] { chatTab, visionTab, voiceTab, searchTab };
+            var panels = new[] { chatPanel, visionPanel, voicePanel, searchPanel };
             void SelectTab(int idx)
             {
                 for (var i = 0; i < panels.Length; i++)
@@ -1389,6 +1403,7 @@ namespace WhaleLauncher.Views
             chatTab.Click += (s, e) => SelectTab(0);
             visionTab.Click += (s, e) => SelectTab(1);
             voiceTab.Click += (s, e) => SelectTab(2);
+            searchTab.Click += (s, e) => SelectTab(3);
             SelectTab(0);
 
             // 两组控件先都建出来：换聊天模型时要同步刷新看图的提示和角标
@@ -1926,7 +1941,7 @@ namespace WhaleLauncher.Views
                 visionResult.Text = res.Ok ? "看图通了，它说：" + res.Str("sample") : "没通：" + Api.Message(res);
             };
 
-            // ── 语音面板（原来单独一页，并到模型卡里）──────────
+            // ── 语音面板（原来单独一页，并到 API 接入里）──────────
             var voiceHint = new TextBlock
             {
                 Style = (Style)FindResource("Small"),
@@ -1935,12 +1950,293 @@ namespace WhaleLauncher.Views
                 Text = "接收微信语音并识别成文字；发送语音请使用工作台「语音发送」。",
             };
             voicePanel.Children.Add(voiceHint);
-            voicePanel.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；留空则用主模型的 Key" }, false, ModelLabel));
-            voicePanel.Children.Add(BuildField(new FieldSpec { Path = "voice.baseUrl", Label = "接口地址", Kind = "text" }, false, ModelLabel));
-            voicePanel.Children.Add(BuildField(new FieldSpec { Path = "voice.model", Label = "语音模型", Kind = "text" }, false, ModelLabel));
+
+            var voiceSwitch = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
+            voiceSwitch.Click += async (s, e) =>
+            {
+                if (_loading) return;
+                var on = voiceSwitch.IsChecked == true;
+                if (!on && !AppDialog.Confirm(Window.GetWindow(this),
+                    "关闭语音识别会同时删除已保存的语音接口 Key。\n\n下次开启需要重新填写。继续吗？",
+                    "关闭语音识别", okText: "关闭并删除"))
+                {
+                    _loading = true;
+                    voiceSwitch.IsChecked = true;
+                    _loading = false;
+                    return;
+                }
+                if (!await PatchAsync("voice.enabled", on))
+                {
+                    _loading = true;
+                    voiceSwitch.IsChecked = !on;
+                    _loading = false;
+                    return;
+                }
+                if (!on)
+                {
+                    var cleared = await _saver.ClearSecretsAsync(new[] { "voice.apiKey" });
+                    StatusText.Text = cleared.Ok
+                        ? "语音识别已关闭，Key 已删除。"
+                        : "已关闭，但语音 Key 清除失败，请重试：" + Api.Message(cleared);
+                }
+            };
+            _loaders["voice.enabled"] = v =>
+            {
+                if (voiceSwitch.IsKeyboardFocusWithin) return;
+                _loading = true;
+                voiceSwitch.IsChecked = v.ValueKind == JsonValueKind.True;
+                _loading = false;
+            };
+            voicePanel.Children.Add(Row("启用语音识别", voiceSwitch,
+                "关闭后不下载语音、不请求 ASR，并删除已保存的语音 Key。", false, ModelLabel));
+
+            var voiceProvider = new ComboBox { Height = 28, DisplayMemberPath = "Label", MinWidth = 320, HorizontalAlignment = HorizontalAlignment.Left };
+            var voiceModeHint = new TextBlock { Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 6) };
+            var voiceProviderChoices = new List<ProviderItem>
+            {
+                new ProviderItem { Key = "auto", Label = "自动（按接口地址判断）" },
+                new ProviderItem { Key = "deepseek", Label = "DeepSeek 语音识别" },
+                new ProviderItem { Key = "dashscope", Label = "阿里云百炼 qwen3-asr-flash" },
+                new ProviderItem { Key = "custom", Label = "自定义接口" },
+            };
+            voiceProvider.ItemsSource = voiceProviderChoices;
+            voiceProvider.SelectedItem = voiceProviderChoices[0];
+            voicePanel.Children.Add(Row("语音服务", voiceProvider, "", false, ModelLabel));
+            voicePanel.Children.Add(voiceModeHint);
+            voicePanel.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；同源地址可复用 DeepSeek Key" }, false, ModelLabel));
+            var voiceBaseRow = BuildField(new FieldSpec { Path = "voice.baseUrl", Label = "接口地址", Kind = "text" }, false, ModelLabel);
+            var voiceModelRow = BuildField(new FieldSpec { Path = "voice.model", Label = "语音模型", Kind = "text" }, false, ModelLabel);
+            voicePanel.Children.Add(voiceBaseRow);
+            voicePanel.Children.Add(voiceModelRow);
             voicePanel.Children.Add(TwoCol(
                 BuildField(new FieldSpec { Path = "voice.timeoutMs", Label = "识别超时(ms)", Kind = "num", Min = 1000, Max = 300000 }, true),
                 BuildField(new FieldSpec { Path = "voice.maxSeconds", Label = "最长语音(秒)", Kind = "num", Min = 1, Max = 600 }, true)));
+
+            string VoiceProviderKey() => (voiceProvider.SelectedItem as ProviderItem)?.Key ?? "auto";
+            void PaintVoiceMode()
+            {
+                var key = VoiceProviderKey();
+                // 自动模式无法在这里完美判断地址，交给桥接；界面只给通用说明。
+                voiceModeHint.Text = key == "deepseek"
+                    ? "DeepSeek：POST /v1/tools/asr，最长 120 秒、8 MiB，自动识别语种，不支持流式。"
+                    : key == "dashscope"
+                        ? "阿里云百炼：multimodal-generation 接口，模型名默认 qwen3-asr-flash。"
+                        : key == "custom"
+                            ? "自定义：按百炼兼容的 JSON 接口调用；地址和模型都自己填。"
+                            : "自动：地址含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。";
+                voiceModelRow.Visibility = key == "deepseek" ? Visibility.Collapsed : Visibility.Visible;
+            }
+            voiceProvider.SelectionChanged += async (s, e) =>
+            {
+                if (_loading || !(voiceProvider.SelectedItem is ProviderItem picked)) return;
+                var patch = new Dictionary<string, object> { ["voice.provider"] = picked.Key };
+                if (picked.Key == "deepseek")
+                {
+                    patch["voice.baseUrl"] = "https://api.deepseek.com/v1/tools/asr";
+                    patch["voice.model"] = "";
+                }
+                else if (picked.Key == "dashscope")
+                {
+                    patch["voice.baseUrl"] = "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation";
+                    patch["voice.model"] = "qwen3-asr-flash";
+                }
+                PaintVoiceMode();
+                var res = await _saver.SaveAsync(() => patch);
+                if (!res.Ok) StatusText.Text = "语音设置保存失败：" + Api.Message(res);
+            };
+            _loaders["voice.provider"] = v =>
+            {
+                if (voiceProvider.IsKeyboardFocusWithin) return;
+                _loading = true;
+                var key = v.ValueKind == JsonValueKind.String ? v.GetString() : "auto";
+                voiceProvider.SelectedItem = voiceProviderChoices.FirstOrDefault(x => x.Key == key) ?? voiceProviderChoices[0];
+                _loading = false;
+                PaintVoiceMode();
+            };
+            PaintVoiceMode();
+            // ── 搜索：一个总开关；开启后才出现“添加 API” ──────────
+            var apiEnabled = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
+            searchPanel.Children.Add(Row("启用搜索 API", apiEnabled,
+                "关闭时不调用任何第三方搜索 API，并清空已添加的 API、删除已保存的搜索 Key。开启后先走 API，失败或没有结果再回退本地 Bing/360。", false, ModelLabel));
+
+            var apiBody = new StackPanel { Visibility = Visibility.Collapsed };
+            searchPanel.Children.Add(apiBody);
+            apiBody.Children.Add(new TextBlock
+            {
+                Style = (Style)FindResource("Small"),
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6),
+                Text = "开启搜索 API 后先走已添加的 API；API 失败或没有结果时自动回退本地 Bing/360。关闭 API 时只走本地。",
+            });
+
+            var apiAdd = new ComboBox { Height = 26, DisplayMemberPath = "Label", MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
+            var apiAddButton = new Button { Content = "添加", Style = (Style)FindResource("Ghost"), Margin = new Thickness(8, 0, 0, 0) };
+            var apiAddRow = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 4, 0, 0) };
+            apiAddRow.Children.Add(apiAdd);
+            apiAddRow.Children.Add(apiAddButton);
+            apiBody.Children.Add(apiAddRow);
+
+            var apiChoices = new List<ProviderItem>
+            {
+                new ProviderItem { Key = "deepseek", Label = "DeepSeek 搜索" },
+                new ProviderItem { Key = "zhihu", Label = "知乎搜索" },
+            };
+            var apiProviders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            // BuildApiRow 在构造期就会被调用，没法直接引用后面才定义的 RefreshApiUi。
+            Action refreshApi = null;
+
+            StackPanel BuildApiRow(string key, string title, string note, params FrameworkElement[] fields)
+            {
+                var panel = new StackPanel { Visibility = Visibility.Collapsed, Margin = new Thickness(0, 10, 0, 0) };
+                var head = new DockPanel { LastChildFill = false };
+                var remove = new Button { Content = "移除", Style = (Style)FindResource("Ghost"), HorizontalAlignment = HorizontalAlignment.Right };
+                DockPanel.SetDock(remove, Dock.Right);
+                head.Children.Add(remove);
+                var caption = new StackPanel();
+                caption.Children.Add(new TextBlock { Text = title, FontWeight = FontWeights.SemiBold });
+                caption.Children.Add(new TextBlock { Text = note, Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 2, 0, 0) });
+                head.Children.Add(caption);
+                panel.Children.Add(head);
+                foreach (var field in fields) panel.Children.Add(field);
+
+                remove.Click += async (s, e) =>
+                {
+                    if (_loading) return;
+                    if (!AppDialog.Confirm(Window.GetWindow(this),
+                        "移除「" + title + "」会同时删除它的 Key / Secret。\n\n继续吗？", "移除 API", okText: "移除")) return;
+                    apiProviders.Remove(key);
+                    var saved = await _saver.SaveAsync(() => new Dictionary<string, object>
+                    {
+                        ["websearch.api.providers"] = apiProviders.OrderBy(x => x).ToArray(),
+                    });
+                    if (!saved.Ok)
+                    {
+                        // 没落盘就不能只改界面：否则列表看起来移除了，运行时还在调用。
+                        apiProviders.Add(key);
+                        StatusText.Text = "移除失败：" + Api.Message(saved);
+                        refreshApi?.Invoke();
+                        return;
+                    }
+                    var cleared = await _saver.ClearSecretsAsync(new[] { SecretPathOf(key) });
+                    if (!cleared.Ok) StatusText.Text = "已移除，但 Key 清除失败，请重试：" + Api.Message(cleared);
+                    else StatusText.Text = "已移除「" + title + "」并删除 Key。";
+                    refreshApi?.Invoke();
+                };
+                return panel;
+            }
+
+            string SecretPathOf(string key) => key == "zhihu" ? "websearch.zhihu.accessSecret" : "websearch.deepseek.apiKey";
+
+            var apiDeepseekRow = BuildApiRow("deepseek", "DeepSeek 搜索",
+                "POST /v1/tools/search · 5 元/千次成功请求；失败/无结果不计费。",
+                BuildField(new FieldSpec { Path = "websearch.deepseek.apiKey", Label = "DeepSeek Key", Kind = "secret", Hint = "留空表示不改；只用于搜索 API" }, false, ModelLabel));
+            var apiZhihuRow = BuildApiRow("zhihu", "知乎搜索",
+                "官方开放平台 zhihu_search · 免费额度外 20 元/千次；每天最多 4999 次，超了只走本地。",
+                BuildField(new FieldSpec { Path = "websearch.zhihu.accessSecret", Label = "Access Secret", Kind = "secret", Hint = "知乎开放平台个人中心申请；留空表示不改" }, false, ModelLabel),
+                BuildField(new FieldSpec { Path = "websearch.zhihu.dailyLimit", Label = "每日上限", Kind = "num", Min = 0, Max = 100000, Hint = "0 = 不限；默认 4999，超过后不调用知乎" }, false, ModelLabel));
+            apiBody.Children.Add(apiDeepseekRow);
+            apiBody.Children.Add(apiZhihuRow);
+
+            void RefreshApiUi()
+            {
+                var on = apiEnabled.IsChecked == true;
+                apiBody.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+                apiDeepseekRow.Visibility = on && apiProviders.Contains("deepseek") ? Visibility.Visible : Visibility.Collapsed;
+                apiZhihuRow.Visibility = on && apiProviders.Contains("zhihu") ? Visibility.Visible : Visibility.Collapsed;
+                var available = apiChoices.Where(x => !apiProviders.Contains(x.Key)).ToList();
+                apiAdd.ItemsSource = available;
+                apiAdd.SelectedIndex = available.Count > 0 ? 0 : -1;
+                apiAddButton.IsEnabled = available.Count > 0;
+                apiAddRow.Visibility = on && available.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+            }
+
+            async Task<bool> SaveApiProvidersAsync()
+            {
+                var res = await _saver.SaveAsync(() => new Dictionary<string, object>
+                {
+                    ["websearch.api.providers"] = apiProviders.OrderBy(x => x).ToArray(),
+                });
+                if (!res.Ok) StatusText.Text = "搜索 API 列表保存失败：" + Api.Message(res);
+                return res.Ok;
+            }
+
+            apiEnabled.Click += async (s, e) =>
+            {
+                if (_loading) return;
+                var on = apiEnabled.IsChecked == true;
+                if (!on && !AppDialog.Confirm(Window.GetWindow(this),
+                    "关闭搜索 API 会：\n\n• 清空已添加的 API\n• 删除 DeepSeek 搜索 Key 和知乎 Access Secret\n\n下次开启需要重新添加并填写。继续吗？",
+                    "关闭搜索 API", okText: "关闭并删除"))
+                {
+                    _loading = true;
+                    apiEnabled.IsChecked = true;
+                    _loading = false;
+                    RefreshApiUi();
+                    return;
+                }
+                var patch = new Dictionary<string, object> { ["websearch.api.enabled"] = on };
+                if (!on) patch["websearch.api.providers"] = Array.Empty<string>();
+                var res = await _saver.SaveAsync(() => patch);
+                if (!res.Ok)
+                {
+                    StatusText.Text = "搜索 API 开关保存失败：" + Api.Message(res);
+                    _loading = true;
+                    apiEnabled.IsChecked = !on;
+                    _loading = false;
+                    RefreshApiUi();
+                    return;
+                }
+                if (!on)
+                {
+                    apiProviders.Clear();
+                    var cleared = await _saver.ClearSecretsAsync(new[]
+                    {
+                        "websearch.deepseek.apiKey",
+                        "websearch.zhihu.accessSecret",
+                    });
+                    if (!cleared.Ok) StatusText.Text = "已关闭，但 Key 清除失败，请重试：" + Api.Message(cleared);
+                    else StatusText.Text = "搜索 API 已关闭，列表和 Key 已清除。";
+                }
+                else
+                {
+                    StatusText.Text = "搜索 API 已开启，请添加要使用的 API。";
+                }
+                RefreshApiUi();
+            };
+
+            apiAddButton.Click += async (s, e) =>
+            {
+                if (_loading || !(apiAdd.SelectedItem is ProviderItem picked)) return;
+                if (!apiProviders.Add(picked.Key)) return;
+                if (!await SaveApiProvidersAsync())
+                {
+                    apiProviders.Remove(picked.Key);
+                    StatusText.Text = "添加失败，未写入配置。";
+                }
+                RefreshApiUi();
+            };
+
+            _loaders["websearch.api.enabled"] = v =>
+            {
+                _loading = true;
+                apiEnabled.IsChecked = v.ValueKind == JsonValueKind.True;
+                _loading = false;
+                RefreshApiUi();
+            };
+            _loaders["websearch.api.providers"] = v =>
+            {
+                _loading = true;
+                apiProviders.Clear();
+                if (v.ValueKind == JsonValueKind.Array)
+                    foreach (var item in v.EnumerateArray())
+                        if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString()))
+                            apiProviders.Add(item.GetString());
+                _loading = false;
+                RefreshApiUi();
+            };
+            refreshApi = RefreshApiUi;
+            RefreshApiUi();
+
             // 「深度思考」已经挪到聊天页签（和 /api/settings 共用 thinking），这里不再重复放一个配置项。
 
             _loadModel = (set, provs) =>

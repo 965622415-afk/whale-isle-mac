@@ -84,12 +84,23 @@ const FIELDS = {
   'care.maxPerDay': { type: 'int', min: 0, max: 50 },
   'care.quietAfterMinutes': { type: 'int', min: 0, max: 1440 },
 
+  // ---- 语音识别 ----
+  'voice.enabled': { type: 'bool' },
+  'voice.provider': { type: 'enum', values: ['auto', 'deepseek', 'dashscope', 'custom'] },
+  'voice.baseUrl': { type: 'string', maxLen: 500 },
+  'voice.model': { type: 'string', maxLen: 120 },
+  'voice.timeoutMs': { type: 'int', min: 1000, max: 300000 },
+  'voice.maxSeconds': { type: 'int', min: 1, max: 600 },
+
   // ---- 联网 / 链接 ----
   'links.enabled': { type: 'bool' },
   'links.timeoutMs': { type: 'int', min: 1000, max: 60000 },
   'links.cacheMinutes': { type: 'int', min: 0, max: 1440 },
   'links.allowPrivate': { type: 'bool' },
-  'websearch.enabled': { type: 'bool' },
+  // 本地搜索强制开启，不再暴露 websearch.enabled（老配置里的 false 也会被 loadConfig 覆盖）。
+  // 搜索 API 总开关：关闭时不调用任何第三方搜索 API，本地搜索仍照常执行。
+  'websearch.api.enabled': { type: 'bool' },
+  'websearch.zhihu.dailyLimit': { type: 'int', min: 0, max: 100000 },
   // 语义路由（每句话先问一次模型「要不要联网」）：不配时只在像问句/命中事实词时才问；
   // true 则每句都问（更准，每句多 ~2 秒）；false 则完全按关键词。
   'websearch.semanticRoute': { type: 'bool' },

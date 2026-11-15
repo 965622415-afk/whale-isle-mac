@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -27,6 +28,11 @@ namespace WhaleLauncher
 
         public Task<ApiResult> SaveSettingsAsync(Func<object> build)
             => RunAsync(() => _sup.SaveConfigurationAsync("/api/settings", build()));
+
+        /// <summary>显式清除密钥；普通 patch 的空值语义是「不改」，清 Key 必须走这个入口。</summary>
+        public Task<ApiResult> ClearSecretsAsync(IEnumerable<string> paths)
+            => RunAsync(() => _sup.SaveConfigurationAsync("/api/config/clear-secrets",
+                new { paths = (paths ?? Enumerable.Empty<string>()).ToArray() }));
 
         public Task<ApiResult> SaveSecretAsync(string path, Func<string> build)
             => RunAsync(() =>

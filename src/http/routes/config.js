@@ -1,6 +1,6 @@
 'use strict';
 
-const { publicConfig, applyConfigPatch, resetConfig } = require('../../infra/configPatch');
+const { publicConfig, applyConfigPatch, resetConfig, clearSecrets } = require('../../infra/configPatch');
 const { statusPayload } = require('../../services/status');
 const { errorMessage } = require('../../infra/errors');
 const { json, readBody } = require('../util');
@@ -32,6 +32,19 @@ module.exports = function register(router) {
       });
     } catch (err) {
       return json(res, 400, { ok: false, error: errorMessage(err, '读取配置失败') });
+    }
+  });
+
+  // 清除密钥：普通 patch 的空值表示「不改」，所以单独开一个入口。
+  // body = { paths: ['websearch.deepseek.apiKey', ...] }，只接受 SECRET_PATHS。
+  router.post('/api/config/clear-secrets', async (runtime, req, res) => {
+    const body = await readBody(req);
+    try {
+      const out = clearSecrets(runtime, body && body.paths);
+      return json(res, 200, { ok: true, cleared: out.cleared, config: publicConfig(runtime.config).config, secrets: publicConfig(runtime.config).secrets });
+    } catch (err) {
+      const code = err && err.statusCode ? err.statusCode : 400;
+      return json(res, code, { ok: false, error: errorMessage(err, '清除密钥失败') });
     }
   });
 

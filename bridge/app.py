@@ -76,6 +76,8 @@ class BridgeRuntime(AccountMixin, WindowMixin, SenderMixin, StickerMixin, VoiceM
             import requests
             G.boot('开始 import wechatauto（可能较慢，10~20 秒）')
             from wechatauto import MediaDownloader, WeChatDB, WeChatGUI
+            from window_activation import install as install_safe_activation
+            install_safe_activation()
             from wechatauto.db import Listener
             self.MediaDownloader = MediaDownloader
             self.WeChatDB = WeChatDB
