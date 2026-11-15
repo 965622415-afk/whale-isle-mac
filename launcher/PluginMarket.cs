@@ -35,6 +35,11 @@ namespace WhaleLauncher
     {
         internal const string CatalogUrl = "https://raw.githubusercontent.com/Banan1cee/whale-girl-plugins/main/index.json";
         internal const string DigestAction = "chat.summary";
+
+        // 市场签名暂时隐藏：验签代码、内置公钥和签名工具都保留，恢复时把这里改成 true 即可。
+        // 关闭时目录不再拉取 .sig、条目里的 Signature 只解析不校验，卡片也不显示签名状态，
+        // 避免用户以为包已经验过；SHA-256、下载域名白名单和包内清单一致性照常检查。
+        internal static readonly bool MarketSignatureEnabled = false;
         private const string CatalogV2Url = "https://raw.githubusercontent.com/Banan1cee/whale-girl-plugins/main/index-v2.json";
         private const string CatalogV3Url = "https://raw.githubusercontent.com/Banan1cee/whale-girl-plugins/main/index-v3.json";
         private const string CatalogV4Url = "https://raw.githubusercontent.com/Banan1cee/whale-girl-plugins/main/index-v4.json";
@@ -309,6 +314,7 @@ namespace WhaleLauncher
             string expectedKind = null)
         {
             var bytes = await DownloadAsync(url, 256 * 1024);
+            if (!MarketSignatureEnabled) return ParseCatalog(bytes, expectedApi, expectedKind);
             string signature = null;
             try
             {
@@ -462,8 +468,8 @@ namespace WhaleLauncher
         internal async Task InstallAsync(PluginInfo listing)
         {
             var bytes = await DownloadAsync(listing.Download, PackageLimit);
-            // 签名可选：条目里带了 Signature 就必须验过；没带就只靠 SHA-256 + 下载域名白名单。
-            if (!string.IsNullOrWhiteSpace(listing.Signature) && !PluginTrust.Verify(bytes, listing.Signature))
+            // 签名暂时隐藏：恢复 MarketSignatureEnabled 后，条目里带了 Signature 就必须验过。
+            if (MarketSignatureEnabled && !string.IsNullOrWhiteSpace(listing.Signature) && !PluginTrust.Verify(bytes, listing.Signature))
                 throw new InvalidDataException("插件包签名无效，已拒绝安装");
             if (!Convert.ToHexString(SHA256.HashData(bytes)).Equals(listing.Sha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("插件包校验失败");

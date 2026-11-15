@@ -139,8 +139,7 @@ namespace WhaleLauncher.Views
                     body.Children.Add(Small(PluginMarket.SafeText(info.Author, 80) + "  ·  v" + info.Version));
                     body.Children.Add(Small(PluginMarket.SafeText(info.Description, 600)));
                     body.Children.Add(Small(info.CompatibilityLabel));
-                    if (!_showInstalled)
-                        body.Children.Add(Small(info.Signature != null ? "来源：市场目录（已签名）" : "来源：未签名目录"));
+                    // 市场签名暂时隐藏，卡片不再显示已签名 / 未签名目录的标注。
                     body.Children.Add(Small(info.IsJavaScript ? "权限：完整系统权限（网络、文件、命令与全部主程序 API）" : info.IsMessage ? "消息插件：启用后自动参与聊天；权限见设置" : info.IsPersona ? "类型：人设预设" :
                         info.HostAction == PluginMarket.DigestAction ? "权限：按次确认后生成聊天汇总" : "权限：仅本页输入"));
                     var buttons = new WrapPanel { Margin = new Thickness(0, 10, 0, 0) };
