@@ -117,7 +117,7 @@ try
     Check(PluginMarket.ParseCatalog(codeCatalog, 1, "persona").Length == 0);
     Check(PluginMarket.Compatible(persona, "4.1.0"));
     Check(PluginMarket.Compatible(persona, "4.1.9"));
-    Check(!PluginMarket.Compatible(persona, "4.1.5"));
+    Check(!PluginMarket.Compatible(persona, "4.2.0"));
     Check(!PluginMarket.Compatible(persona, "4.0.8"));
     persona = persona with { MaxAppVersion = null };
     File.WriteAllBytes(package, Pack(persona, "persona.json",
