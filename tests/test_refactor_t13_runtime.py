@@ -171,7 +171,7 @@ class ConfigSnapshotTests(unittest.TestCase):
         scope = self.scope(before)
         self.assertTrue(scope['reload_config'](config={}))
         self.assertEqual(scope['STALE_AFTER'], 120)
-        self.assertEqual(scope['VOICE_MODEL'], 'qwen3-asr-flash')
+        self.assertEqual(scope['VOICE_MODEL'], '')
         self.assertTrue(scope['VOICE_ENABLED'])
         self.assertEqual(scope['MASTER_WXID'], '')
 

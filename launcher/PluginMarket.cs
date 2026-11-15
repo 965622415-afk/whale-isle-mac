@@ -29,7 +29,7 @@ namespace WhaleLauncher
             ? $"鲸鲸 {MinAppVersion} 及以上" : $"鲸鲸 {MinAppVersion} – {MaxAppVersion}";
     }
     internal sealed record PluginFeedback(int Comments, int Favorites);
-    internal sealed record PluginPackage(PluginInfo Info, byte[] Module, string Prompt = null);
+    internal sealed record PluginPackage(PluginInfo Info, byte[] Module, string Prompt = null, string Persona = null);
 
     internal sealed class PluginMarket
     {
@@ -181,13 +181,10 @@ namespace WhaleLauncher
             {
                 using var preset = (zip.GetEntry("persona.json") ??
                     throw new InvalidDataException("人设包需要 persona.json")).Open();
-                using var json = JsonDocument.Parse(ReadLimited(preset, 64 * 1024));
+                using var json = JsonDocument.Parse(ReadLimited(preset, 192 * 1024));
                 var data = json.RootElement;
-                if (data.ValueKind != JsonValueKind.Object ||
-                    !data.TryGetProperty("customPrompt", out var value) || value.ValueKind != JsonValueKind.String ||
-                    value.GetString()?.Trim().Length is not (> 0 and <= 24000))
-                    throw new InvalidDataException("人设正文须填写在 customPrompt，最多 24000 字符");
-                return new PluginPackage(info, null, value.GetString().Trim());
+                var document = PersonaPackage.Read(data);
+                return new PluginPackage(info, null, (string)document["customPrompt"], JsonSerializer.Serialize(document));
             }
             using var code = (zip.GetEntry("plugin.wasm") ??
                 throw new InvalidDataException("工具包需要 plugin.wasm")).Open();
@@ -419,11 +416,12 @@ namespace WhaleLauncher
                 throw new InvalidDataException("插件标识或兼容版本无效");
             if (package.Info.IsPersona)
             {
-                WriteAtomically(preset, JsonSerializer.SerializeToUtf8Bytes(new
-                {
-                    name = package.Info.Name, description = package.Info.Description,
-                    version = package.Info.Version, customPrompt = package.Prompt
-                }));
+                using var json = JsonDocument.Parse(package.Persona);
+                var document = PersonaPackage.Read(json.RootElement);
+                document["name"] = package.Info.Name;
+                document["description"] = package.Info.Description;
+                document["version"] = package.Info.Version;
+                WriteAtomically(preset, JsonSerializer.SerializeToUtf8Bytes(document));
             }
             else if (package.Info.IsFlow)
             {

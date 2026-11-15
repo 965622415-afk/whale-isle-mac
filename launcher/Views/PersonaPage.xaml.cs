@@ -14,7 +14,10 @@ namespace WhaleLauncher.Views
     public sealed class PresetItem
     {
         public string Id { get; set; }
+        public string Name { get; set; }
+        public string Source { get; set; }
         public string Label { get; set; }
+        public bool IsUser => string.Equals(Source, "user", StringComparison.OrdinalIgnoreCase);
         public override string ToString() => Label ?? Id ?? "";
     }
 
@@ -25,8 +28,12 @@ namespace WhaleLauncher.Views
         private bool _loading;
         private bool _loaded;
         private bool _loadedOnline;
+        private long _editRevision;
         private readonly SemaphoreSlim _saveGate = new SemaphoreSlim(1, 1);
         private string _loadedEmoji = "正常";   // 上次载入的颜文字档位，用来判断用户有没有改过
+        private string _presetSource = "";      // 内置只读；市场人设修改到本地单文件副本
+        private bool _locked;
+        private string _currentPresetName = "";
 
         // 主人名单复用 ContactInfo：名字和 wxid 本来就是联系人的两个字段，
         // 再立一个 MasterEntry 只会多一套同样的模型。
@@ -34,16 +41,6 @@ namespace WhaleLauncher.Views
         private DispatcherTimer _masterSearchTimer;
         private int _masterSearchSeq;
         private bool _masterRendering;
-
-        /// <summary>
-        /// 这些开关在各自专页已经有入口（微信桥接 / 主动与提醒 / 表情包），
-        /// 人设页不再重复列一份，避免同一个键两处可改、改完另一处不刷新。
-        /// </summary>
-        private static readonly HashSet<string> HiddenFlags = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "wechatAccountGuard", "quoteReply", "stickers",
-            "proactiveCare", "careOnlyMaster", "careGroups", "careOthers",
-        };
 
         private string _currentPresetId = "";   // 当前人设来自哪一版，用来把下拉框选到正确项
 
@@ -71,7 +68,15 @@ namespace WhaleLauncher.Views
 
         public async Task RefreshAsync()
         {
-            if (_loaded && _loadedOnline == _sup.NodeRunning) return;
+            if (_loaded && _loadedOnline == _sup.NodeRunning)
+            {
+                // 插件卡片也能应用人设；返回时重读当前来源，但不能覆盖在途编辑。
+                if (_saveTimer.IsEnabled || _saveGate.CurrentCount == 0)
+                    await LoadPresetsAsync(_currentPresetId);
+                else
+                    await LoadAsync();
+                return;
+            }
             await LoadAsync();
         }
 
@@ -87,6 +92,7 @@ namespace WhaleLauncher.Views
             try
             {
                 var p = res.Prop("persona");
+                _presetSource = res.Str("presetSource");
                 if (p.ValueKind == JsonValueKind.Object)
                 {
                     TxtName.Text = S(p, "name");
@@ -109,7 +115,6 @@ namespace WhaleLauncher.Views
 
                     ChkProactive.IsChecked = B(p, "proactive");
                     ChkOpinions.IsChecked = B(p, "opinions");
-                    ChkLinks.IsChecked = B(p, "links");
 
                     var src = S(p, "sourcePreset");
                     _currentPresetId = src;
@@ -139,12 +144,30 @@ namespace WhaleLauncher.Views
             finally { _loading = false; }
 
             await LoadPresetsAsync(_currentPresetId);
-            await LoadFlagsAsync();
             await LoadMemoryChatsAsync();
             _loaded = true;
             _loadedOnline = _sup.NodeRunning;
+            ApplyPersonaEditState();
             SaveState.Text = _loadedOnline ? "" : "可保存到本地 · 启动后生效";
             PresetSaved.Text = "";
+        }
+
+        /** 内置只读；市场人设直接编辑，但不会改写原始插件包。 */
+        private void ApplyPersonaEditState()
+        {
+            _locked = string.Equals(_presetSource, "builtin", StringComparison.OrdinalIgnoreCase);
+            foreach (var field in new Control[]
+            {
+                TxtName, TxtAge, TxtJob, TxtLook, TxtPerson, TxtBack, TxtPrompt,
+            })
+            {
+                field.IsEnabled = !_locked;
+            }
+            PresetLockHint.Visibility = _locked ? Visibility.Visible : Visibility.Collapsed;
+            BtnCopyPreset.Visibility = _locked ? Visibility.Visible : Visibility.Collapsed;
+            BtnSavePreset.Visibility = _locked ? Visibility.Collapsed : Visibility.Visible;
+            if (_locked) _saveTimer.Stop();
+            UpdateHints();
         }
 
         private sealed class MemoryChatItem
@@ -226,14 +249,8 @@ namespace WhaleLauncher.Views
 
         private void UpdateHints()
         {
-            HintPrivate.Text = "大约 " + Preview("嗯嗯，我知道啦，那今天先这样吧", TxtPrivate.Text) + " 个字一句话";
-            HintGroup.Text = "群里短一些更像活人：" + Preview("在的在的", TxtGroup.Text) + " 个字";
-        }
-
-        private static string Preview(string sample, string limit)
-        {
-            if (!int.TryParse(limit, out var n) || n <= 0) return sample.Length.ToString();
-            return Math.Max(1, Math.Min(n, sample.Length)).ToString();
+            HintPrivate.Text = "普通私聊最多约 " + TxtPrivate.Text + " 字";
+            HintGroup.Text = "普通群聊最多约 " + TxtGroup.Text + " 字";
         }
 
         private async Task LoadPresetsAsync(string currentId = "")
@@ -249,64 +266,48 @@ namespace WhaleLauncher.Views
                     var id = S(p, "id");
                     var name = S(p, "name");
                     var ver = S(p, "version");
-                    items.Add(new PresetItem { Id = id, Label = string.IsNullOrEmpty(ver) ? $"{name}（{id}）" : $"{name} · {ver}" });
+                    var source = S(p, "source");
+                    var tag = source switch
+                    {
+                        "user" => "我的",
+                        "market" => "市场",
+                        _ => "内置",
+                    };
+                    items.Add(new PresetItem
+                    {
+                        Id = id,
+                        Name = name,
+                        Source = source,
+                        Label = $"【{tag}】{(string.IsNullOrEmpty(ver) ? $"{name}（{id}）" : $"{name} · {ver}")}",
+                    });
                 }
             }
             CmbPreset.ItemsSource = items;
             // 选中「当前人设实际来自哪一版」，而不是永远选第一个，
             // 否则导入 v4 再保存，下拉框会跳回 v1，看起来像没导入成功。
             var hit = items.FirstOrDefault(x => string.Equals(x.Id, currentId, StringComparison.OrdinalIgnoreCase));
-            if (hit != null) CmbPreset.SelectedItem = hit;
-            else if (items.Count > 0) CmbPreset.SelectedIndex = 0;
-            else PresetSaved.Text = "presets 目录里没有人设版本。";
-        }
-
-        private async Task LoadFlagsAsync()
-        {
-            FlagsHost.Children.Clear();
-            var res = await _sup.ReadConfigurationAsync("/api/features");
-            if (!res.Ok) return;
-            var arr = res.Prop("features");
-            if (arr.ValueKind != JsonValueKind.Array) return;
-
-            foreach (var f in arr.EnumerateArray())
+            if (hit != null)
             {
-                var key = S(f, "key");
-                if (HiddenFlags.Contains(key)) continue;   // 有专页的开关不在这里重复
-                var label = S(f, "label");
-                var desc = S(f, "desc");
-                var on = B(f, "value");
-                var def = B(f, "default");
-                var exp = B(f, "experimental");
-
-                var chk = new CheckBox
-                {
-                    Content = label + (exp ? "（实验性）" : "") + $"   默认：{(def ? "开" : "关")}",
-                    IsChecked = on,
-                    Margin = new Thickness(0, 8, 0, 0),
-                    Tag = key
-                };
-                chk.Click += OnFlagClick;
-                FlagsHost.Children.Add(chk);
-
-                var d = new TextBlock
-                {
-                    Text = desc,
-                    Style = (Style)FindResource("Small"),
-                    TextWrapping = TextWrapping.Wrap,
-                    Margin = new Thickness(20, 3, 0, 0)
-                };
-                FlagsHost.Children.Add(d);
+                CmbPreset.SelectedItem = hit;
+                _currentPresetName = hit.Name;
             }
+            else if (items.Count > 0)
+            {
+                CmbPreset.SelectedIndex = 0;
+                _currentPresetName = items[0].Name;
+            }
+            else PresetSaved.Text = "presets 目录里没有人设版本。";
+            UpdatePresetButtons();
         }
 
-        private async void OnFlagClick(object sender, RoutedEventArgs e)
+        private void UpdatePresetButtons()
         {
-            if (_loading) return;
-            if (!(sender is CheckBox chk) || chk.Tag is not string key) return;
-            var value = chk.IsChecked == true;
-            var res = await _sup.SaveConfigurationAsync("/api/features", new { key, value });
-            SaveState.Text = res.Ok ? $"开关 {key} → {(value ? "开" : "关")}" : "开关保存失败：" + Api.Message(res);
+            if (BtnUpdatePreset == null || BtnDeletePreset == null || BtnRenamePreset == null) return;
+            var selected = CmbPreset.SelectedItem as PresetItem;
+            var isCurrent = selected != null && string.Equals(selected.Id, _currentPresetId, StringComparison.OrdinalIgnoreCase);
+            BtnUpdatePreset.IsEnabled = selected != null && selected.IsUser && isCurrent;
+            BtnRenamePreset.IsEnabled = selected != null && selected.IsUser;
+            BtnDeletePreset.IsEnabled = selected != null;
         }
 
         // ── 主人名单：搜索选择，一次填好名字和 wxid ──────────────
@@ -500,6 +501,8 @@ namespace WhaleLauncher.Views
         private void ScheduleSave()
         {
             if (_loading) return;
+            _editRevision++;
+            SaveState.Text = "等待自动保存…";
             _saveTimer.Stop();
             _saveTimer.Start();
         }
@@ -550,6 +553,7 @@ namespace WhaleLauncher.Views
         /// <summary>拖动条位置：优先用显式概率，没设过就按档位换算（关/少/正常/多 → 0/12/30/65）。</summary>
         private static double EmojiPercent(ApiResult cfg, string level)
         {
+            if (string.Equals(level, "关", StringComparison.Ordinal)) return 0;
             if (cfg != null && cfg.Ok && cfg.Prop("config").ValueKind == JsonValueKind.Object
                 && cfg.Prop("config").TryGetProperty("chat", out var chat) && chat.ValueKind == JsonValueKind.Object
                 && chat.TryGetProperty("emojiChance", out var ec) && ec.ValueKind == JsonValueKind.Number)
@@ -566,8 +570,6 @@ namespace WhaleLauncher.Views
             };
         }
 
-        private async void OnSaveAll(object sender, RoutedEventArgs e) => await SaveAllAsync("已保存");
-
         private async void OnReload(object sender, RoutedEventArgs e)
         {
             _loaded = false;
@@ -575,19 +577,20 @@ namespace WhaleLauncher.Views
             await LoadAsync();
         }
 
-        private async Task SaveAllAsync(string okText)
+        private async Task<bool> SaveAllAsync(string okText)
         {
             await _saveGate.WaitAsync();
             try
             {
-            if (_loading || !_loaded) return;
+            if (_loading || !_loaded) return false;
+            var revision = _editRevision;
 
-            if (!TxtAge.TryRead(out var age)) { SaveState.Text = TxtAge.ErrorText; return; }
-            if (!TxtPrivate.TryRead(out var priv)) { SaveState.Text = TxtPrivate.ErrorText; return; }
-            if (!TxtGroup.TryRead(out var grp)) { SaveState.Text = TxtGroup.ErrorText; return; }
-            if (!TxtTurns.TryRead(out var turns)) { SaveState.Text = TxtTurns.ErrorText; return; }
-            if (!TxtGroupTurns.TryRead(out var gturns)) { SaveState.Text = TxtGroupTurns.ErrorText; return; }
-            if (!TxtBubbles.TryRead(out var bubbles)) { SaveState.Text = TxtBubbles.ErrorText; return; }
+            if (!TxtAge.TryRead(out var age)) { SaveState.Text = TxtAge.ErrorText; return false; }
+            if (!TxtPrivate.TryRead(out var priv)) { SaveState.Text = TxtPrivate.ErrorText; return false; }
+            if (!TxtGroup.TryRead(out var grp)) { SaveState.Text = TxtGroup.ErrorText; return false; }
+            if (!TxtTurns.TryRead(out var turns)) { SaveState.Text = TxtTurns.ErrorText; return false; }
+            if (!TxtGroupTurns.TryRead(out var gturns)) { SaveState.Text = TxtGroupTurns.ErrorText; return false; }
+            if (!TxtBubbles.TryRead(out var bubbles)) { SaveState.Text = TxtBubbles.ErrorText; return false; }
 
             var pct = Math.Clamp((int)Math.Round(SldEmoji.Value), 0, 100);
             // 0% 用档位「关」做硬关；>0 时把档位恢复成可用值，真正生效的是下面的精确概率
@@ -595,7 +598,18 @@ namespace WhaleLauncher.Views
                 ? "关"
                 : (string.Equals(_loadedEmoji, "关", StringComparison.Ordinal) ? "正常" : _loadedEmoji);
             var emojiChance = pct / 100.0;
+            // 一次保存使用同一份表单快照，等待 HTTP 时的新编辑留给下一次自动保存。
+            var owner = TxtOwner.Text.Trim();
+            var extraPatch = new Dictionary<string, object>
+            {
+                ["persona.masterRoast"] = ChkRoast.IsChecked == true,
+                ["persona.aliases"] = LineList(TxtAliases),
+                ["persona.master.names"] = MasterList(e => e.Name),
+                ["persona.master.wxids"] = MasterList(e => e.Wxid),
+                ["chat.emojiChance"] = emojiChance
+            };
 
+            // 内置 / 市场预设只锁身份和提示词；字数、上下文、颜文字和开关照常保存
             var res = await _sup.SaveConfigurationAsync("/api/persona", new
             {
                 name = TxtName.Text.Trim(),
@@ -613,41 +627,40 @@ namespace WhaleLauncher.Views
                 emoji,
                 proactive = ChkProactive.IsChecked == true,
                 opinions = ChkOpinions.IsChecked == true,
-                links = ChkLinks.IsChecked == true
+                ownerName = owner,
+                aliases = LineList(TxtAliases),
+                masterRoast = ChkRoast.IsChecked == true,
+                emojiChance
             });
             if (!res.Ok)
             {
                 SaveState.Text = "保存失败：" + Api.Message(res);
-                return;
+                return false;
             }
 
             // 称呼（persona 接口不收，走 settings）；群聊规则统一在「设置 → 群聊」，这里不再写 config
-            var owner = TxtOwner.Text.Trim();
             var ownerResult = await _sup.SaveConfigurationAsync("/api/settings", new { userName = owner });
             if (!ownerResult.Ok)
             {
                 SaveState.Text = "人设已保存，但称呼保存失败：" + Api.Message(ownerResult);
-                return;
+                return false;
             }
-            var configResult = await _sup.PatchConfigurationAsync( new Dictionary<string, object>
-            {
-                ["persona.masterRoast"] = ChkRoast.IsChecked == true,
-                ["persona.aliases"] = LineList(TxtAliases),
-                ["persona.master.names"] = MasterList(e => e.Name),
-                ["persona.master.wxids"] = MasterList(e => e.Wxid),
-                ["chat.emojiChance"] = emojiChance
-            });
+            var configResult = await _sup.PatchConfigurationAsync(extraPatch);
             if (!configResult.Ok)
             {
                 SaveState.Text = "人设与称呼已保存，但其他设置保存失败：" + Api.Message(configResult);
-                return;
+                return false;
             }
             _loadedEmoji = emoji;
 
-            SaveState.Text = okText + PersonaTokenLabel(res.Prop("tokenCheck")) + " · " + DateTime.Now.ToString("HH:mm:ss");
+            SaveState.Text = revision == _editRevision
+                ? okText + PersonaTokenLabel(res.Prop("tokenCheck")) + " · " + DateTime.Now.ToString("HH:mm:ss")
+                : "较早修改已保存 · 新修改等待保存…";
             PresetSaved.Text = "✔ 已保存";
             PresetSaved.Foreground = (Brush)FindResource("Text");
+            return true;
             }
+            catch (Exception ex) { SaveState.Text = "保存失败：" + Api.FriendlyError(ex); return false; }
             finally { _saveGate.Release(); }
         }
 
@@ -655,7 +668,7 @@ namespace WhaleLauncher.Views
         {
             if (!(CmbPreset.SelectedItem is PresetItem p)) return;
             if (p.Id.StartsWith("market-", StringComparison.Ordinal) &&
-                !AppDialog.Confirm(Window.GetWindow(this), "应用此人设会替换当前的自定义提示词。是否继续？",
+                !AppDialog.Confirm(Window.GetWindow(this), "应用此人设会替换人设内容及包内的表达、长度设置，主人账号与密钥不变。是否继续？",
                     "应用插件人设", okText: "应用")) return;
             var res = await _sup.SaveConfigurationAsync("/api/persona/preset", new { id = p.Id });
             if (!res.Ok)
@@ -668,6 +681,181 @@ namespace WhaleLauncher.Views
             await LoadAsync();                       // LoadAsync 会按新的 sourcePreset 选中下拉框
             SaveState.Text = "人设预设已导入" + PersonaTokenLabel(res.Prop("tokenCheck"));
             PresetSaved.Text = "✔ 已保存";
+            PresetSaved.Foreground = (Brush)FindResource("Text");
+        }
+
+        private void OnPresetChanged(object sender, SelectionChangedEventArgs e) => UpdatePresetButtons();
+
+        private async void OnExportPersona(object sender, RoutedEventArgs e)
+            => await ExportPersonaAsync(false);
+
+        private async void OnExportPrompt(object sender, RoutedEventArgs e)
+            => await ExportPersonaAsync(true);
+
+        private async Task ExportPersonaAsync(bool promptOnly)
+        {
+            if (!_loaded) return;
+            if (!AppDialog.Confirm(Window.GetWindow(this),
+                promptOnly
+                    ? "只导出自定义补充提示词，不含身份字段和页面开关。安装启用后会出现在人设列表。\n请确认提示词正文不包含个人信息。"
+                    : "导出当前人设、称呼、别名、顶嘴与交流偏好、颜文字和长度设置。\n不包含主人账号、密钥、聊天记忆或系统权限。\n请检查人设正文及称呼是否写有个人信息。",
+                "打包分享", okText: "继续")) return;
+            var title = AppDialog.Prompt(Window.GetWindow(this), "分享包名称", "打包分享",
+                string.IsNullOrWhiteSpace(_currentPresetName) ? TxtName.Text : _currentPresetName);
+            if (title == null) return;
+            var author = AppDialog.Prompt(Window.GetWindow(this), "作者昵称（会公开显示）", "打包分享");
+            if (author == null) return;
+            var id = AppDialog.Prompt(Window.GetWindow(this), "包 ID：小写字母开头，只用小写字母、数字、短横线，最多 48 位。更新同一包时保持不变。",
+                "打包分享", "persona-" + Guid.NewGuid().ToString("N").Substring(0, 12));
+            if (id == null) return;
+            var version = AppDialog.Prompt(Window.GetWindow(this), "包版本，更新时提高版本号", "打包分享", "1.0.0");
+            if (version == null) return;
+            var dialog = new Microsoft.Win32.SaveFileDialog { Filter = "人设插件包 (*.zip)|*.zip", FileName = "persona.zip", OverwritePrompt = true };
+            if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+            try
+            {
+                _saveTimer.Stop();
+                if (!await SaveAllAsync("已保存")) return;
+                var result = await _sup.SaveConfigurationAsync("/api/persona/export", new { });
+                if (!result.Ok) { SaveState.Text = Api.Message(result); return; }
+                PersonaPackage.Export(dialog.FileName, result.Prop("persona"), title.Trim(), author.Trim(), id.Trim(), version.Trim(), promptOnly);
+                SaveState.Text = promptOnly
+                    ? "纯提示词包已导出，可本地安装分享或按市场流程投稿"
+                    : "已打包，可本地安装分享；公开上架需市场校验支持完整设置格式";
+            }
+            catch (Exception ex) { SaveState.Text = "打包失败：" + Api.FriendlyError(ex); }
+        }
+
+        private async void OnSavePreset(object sender, RoutedEventArgs e)
+        {
+            if (!_loaded || _locked) return;
+            var name = AppDialog.Prompt(Window.GetWindow(this),
+                "给这份人设起个标题（只用于列表展示，不会改她的名字）。以后保存人设会自动更新它。",
+                "另存为人设预设");
+            if (name == null) return;
+            name = name.Trim();
+            if (name.Length == 0 || name.Length > 40)
+            {
+                PresetSaved.Text = "标题要 1~40 个字";
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            _saveTimer.Stop();
+            if (!await SaveAllAsync("已保存")) return;
+            var res = await _sup.SaveConfigurationAsync("/api/persona/preset/save", new { name });
+            if (!res.Ok)
+            {
+                PresetSaved.Text = "保存失败：" + Api.Message(res);
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            _loaded = false;
+            await LoadAsync();
+            SaveState.Text = "已保存为预设「" + name + "」" + PersonaTokenLabel(res.Prop("tokenCheck"));
+            PresetSaved.Text = "✔ 已保存";
+            PresetSaved.Foreground = (Brush)FindResource("Text");
+        }
+
+        private async void OnCopyPreset(object sender, RoutedEventArgs e)
+        {
+            if (!_loaded || !_locked) return;
+            var initial = (string.IsNullOrWhiteSpace(_currentPresetName) ? "我的预设" : _currentPresetName) + " 副本";
+            var name = AppDialog.Prompt(Window.GetWindow(this),
+                "内置 / 市场预设不能直接改，先复制成自己的预设。复制后的人设可以随便改，保存会自动同步。",
+                "复制为自建预设", initial);
+            if (name == null) return;
+            name = name.Trim();
+            if (name.Length == 0 || name.Length > 40)
+            {
+                PresetSaved.Text = "标题要 1~40 个字";
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            var res = await _sup.SaveConfigurationAsync("/api/persona/preset/save", new { name });
+            if (!res.Ok)
+            {
+                PresetSaved.Text = "复制失败：" + Api.Message(res);
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            _loaded = false;
+            await LoadAsync();
+            SaveState.Text = "已复制为自建预设「" + name + "」，现在可以修改了";
+            PresetSaved.Text = "✔ 已保存";
+            PresetSaved.Foreground = (Brush)FindResource("Text");
+        }
+
+        private async void OnRenamePreset(object sender, RoutedEventArgs e)
+        {
+            if (!_loaded || !(CmbPreset.SelectedItem is PresetItem p) || !p.IsUser) return;
+            var name = AppDialog.Prompt(Window.GetWindow(this),
+                "只改预设标题，不动人设内容和当前使用状态。", "重命名自建预设", p.Name);
+            if (name == null) return;
+            name = name.Trim();
+            if (name.Length == 0 || name.Length > 40)
+            {
+                PresetSaved.Text = "名字要 1~40 个字";
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            var res = await _sup.SaveConfigurationAsync("/api/persona/preset/rename", new { id = p.Id, name });
+            if (!res.Ok)
+            {
+                PresetSaved.Text = "重命名失败：" + Api.Message(res);
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            await LoadPresetsAsync(_currentPresetId);
+            SaveState.Text = "预设已重命名为「" + name + "」";
+            PresetSaved.Text = "✔ 已重命名";
+            PresetSaved.Foreground = (Brush)FindResource("Text");
+        }
+
+        private async void OnUpdatePreset(object sender, RoutedEventArgs e)
+        {
+            if (!_loaded || !(CmbPreset.SelectedItem is PresetItem p) || !p.IsUser) return;
+            if (!string.Equals(p.Id, _currentPresetId, StringComparison.OrdinalIgnoreCase))
+            {
+                PresetSaved.Text = "先「导入这版」再更新，避免把当前人设写到别的预设里";
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            if (!AppDialog.Confirm(Window.GetWindow(this),
+                $"用当前表单里的内容覆盖预设「{p.Name}」？", "更新自建预设", okText: "更新")) return;
+            var res = await _sup.SaveConfigurationAsync("/api/persona/preset/save", new { id = p.Id, name = p.Name });
+            if (!res.Ok)
+            {
+                PresetSaved.Text = "更新失败：" + Api.Message(res);
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            _loaded = false;
+            await LoadAsync();
+            SaveState.Text = "已更新预设「" + p.Name + "」" + PersonaTokenLabel(res.Prop("tokenCheck"));
+            PresetSaved.Text = "✔ 已保存";
+            PresetSaved.Foreground = (Brush)FindResource("Text");
+        }
+
+        private async void OnDeletePreset(object sender, RoutedEventArgs e)
+        {
+            if (!_loaded || !(CmbPreset.SelectedItem is PresetItem p)) return;
+            var detail = p.IsUser
+                ? "这是你自己保存的预设，会直接删除文件。"
+                : "内置 / 市场预设只会从列表隐藏，不删除安装目录和插件文件；插件卸载后重新安装会按新文件恢复。";
+            if (!AppDialog.Confirm(Window.GetWindow(this),
+                $"删除预设「{p.Name}」？\n\n{detail}\n\n正在使用的预设不能删除，请先导入别的人设。",
+                "删除预设", danger: true, okText: "删除")) return;
+            var res = await _sup.SaveConfigurationAsync("/api/persona/preset/delete", new { id = p.Id });
+            if (!res.Ok)
+            {
+                PresetSaved.Text = "删除失败：" + Api.Message(res);
+                PresetSaved.Foreground = (Brush)FindResource("Bad");
+                return;
+            }
+            _loaded = false;
+            await LoadAsync();
+            SaveState.Text = "已删除预设「" + p.Name + "」";
+            PresetSaved.Text = "✔ 已删除";
             PresetSaved.Foreground = (Brush)FindResource("Text");
         }
 

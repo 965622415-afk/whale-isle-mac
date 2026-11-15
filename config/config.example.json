@@ -152,10 +152,24 @@
     }
   },
   "websearch": {
-    "_说明": "问天气/新闻等实时问题时联网现搜。city 填你所在的城市（比如「上海」），问她天气时才准；留空就按她收到的原话搜（可能搜到别的城市）。enabled=false 关闭所有联网",
+    "_说明": "问天气/新闻等实时问题时联网现搜。本地 Bing/360 始终开启；api.enabled 只控制是否额外调用第三方搜索 API。city 填你所在的城市（比如「上海」），问她天气时才准；留空就按她收到的原话搜（可能搜到别的城市）。",
     "enabled": true,
     "city": "",
-    "timeoutMs": 8000
+    "timeoutMs": 8000,
+    "api": {
+      "_说明": "搜索 API 总开关；关闭时不调用任何第三方搜索 API。开启后 providers 里放 deepseek / zhihu。",
+      "enabled": false,
+      "providers": []
+    },
+    "deepseek": {
+      "_说明": "DeepSeek 搜索 API Key（/v1/tools/search）。留空时只在同源情况下复用 deepseek.apiKey。",
+      "apiKey": ""
+    },
+    "zhihu": {
+      "_说明": "知乎开放平台 Access Secret；dailyLimit 是本地每日上限，默认 4999，超了只走本地搜索。",
+      "accessSecret": "",
+      "dailyLimit": 4999
+    }
   },
   "env": {
     "_说明": "提示词 <env> 块里的环境信息。location 手填可以精确到区（比如「厦门市思明区」）；留空就自动探测：优先 Windows 定位服务（不吃公网 IP，挂 VPN 也是本机位置，精度差时只报城市），拿不到才按出口 IP 猜（会写明「挂 VPN 可能不符」）。autoDetect=false 完全关掉探测，只用手填和 websearch.city。timezone 是全局唯一时区来源：留空=系统时区，日记时间、主动搭话时间段、提醒、朋友圈夜间判断、聊天时间戳和 <env> 都按它算。地点最多到区，不落盘",
@@ -184,11 +198,12 @@
     "timeoutMs": 30000
   },
   "voice": {
-    "_说明": "语音消息转文字。默认阿里云百炼 qwen3-asr-flash；apiKey 留空则用 data/settings.json 里的 Key。maxSeconds=超过多少秒的语音不转",
+    "_说明": "语音消息转文字。provider=auto 时按接口地址判断：含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。DeepSeek 不需要模型名，最长 120 秒。apiKey 留空则用同源服务商的 Key。enabled=false 时不下载、不请求。",
     "enabled": true,
+    "provider": "auto",
     "apiKey": "",
-    "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
-    "model": "qwen3-asr-flash",
+    "baseUrl": "https://api.deepseek.com/v1/tools/asr",
+    "model": "",
     "timeoutMs": 90000,
     "maxSeconds": 120
   },

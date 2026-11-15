@@ -6,7 +6,7 @@ using WhaleLauncher;
 
 using var signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
 
-var dir = Directory.CreateTempSubdirectory("whale-market-checks-").FullName;
+var dir = Directory.CreateDirectory(Path.Combine(Environment.GetEnvironmentVariable("WHALE_TEST_TMP") ?? Path.GetTempPath(), "whale-market-checks-" + Guid.NewGuid().ToString("N"))).FullName;
 try
 {
     var module = Convert.FromHexString("0061736d010000000105016000017f021401057768616c650a696e7075745f73697a650000030201000707010372756e00010a0601040010000b");
@@ -119,6 +119,7 @@ try
     Check(PluginMarket.Compatible(persona, "4.1.9"));
     Check(!PluginMarket.Compatible(persona, "4.2.0"));
     Check(!PluginMarket.Compatible(persona, "4.0.8"));
+    persona = persona with { MaxAppVersion = null };
     File.WriteAllBytes(package, Pack(persona, "persona.json",
         System.Text.Encoding.UTF8.GetBytes("""{"customPrompt":"温和自然","personaName":"不可覆盖"}""")));
     market.InstallLocal(package);
@@ -128,12 +129,73 @@ try
     using (var json = JsonDocument.Parse(File.ReadAllBytes(preset)))
     {
         Check(json.RootElement.GetProperty("customPrompt").GetString() == "温和自然");
-        Check(!json.RootElement.TryGetProperty("personaName", out _));
+        Check(json.RootElement.GetProperty("personaName").GetString() == "不可覆盖");
     }
     market.SetEnabled(persona.Id, false);
     Check(!File.Exists(preset) && market.Installed().Length == 1);
     market.Uninstall(persona.Id);
     Check(market.Installed().Length == 0);
+    var share = Path.Combine(dir, "shared-persona.zip");
+    using (var document = JsonDocument.Parse("""
+        {"schemaVersion":1,"personaName":"小鱼","customPrompt":"","personality":"沉静","ownerName":"老大",
+         "aliases":["小鱼儿"],"masterRoast":true,"proactive":false,"opinions":false,
+         "emoji":"少","emojiChance":0.8,"historyTurns":350,"maxBubbles":4,
+         "master":{"wxids":["must-not-share"]},"apiKey":"must-not-share","permissions":["system.full"]}
+        """))
+    {
+        PersonaPackage.Export(share, document.RootElement, "完整小鱼", "分享者", "portable-fish", "1.0.0");
+    }
+    using (var zip = ZipFile.OpenRead(share))
+    {
+        Check(zip.Entries.Count == 2);
+        Check(zip.GetEntry("plugin.json") != null && zip.GetEntry("persona.json") != null);
+    }
+    var portablePackage = PluginMarket.ReadPackage(File.ReadAllBytes(share));
+    Check(portablePackage.Info.MinAppVersion == "4.2.0" && portablePackage.Info.Kind == "persona");
+    Check(!portablePackage.Persona.Contains("must-not-share") && !portablePackage.Persona.Contains("permissions"));
+    Check(market.InstallLocal(share));
+    market.SetEnabled("portable-fish", true);
+    var installedPersona = Path.Combine(dir, "data/plugins/portable-fish.persona.json");
+    using (var json = JsonDocument.Parse(File.ReadAllBytes(installedPersona)))
+    {
+        Check(json.RootElement.GetProperty("masterRoast").GetBoolean());
+        Check(!json.RootElement.GetProperty("proactive").GetBoolean());
+        Check(json.RootElement.GetProperty("emojiChance").GetDouble() == 0.8);
+        Check(json.RootElement.GetProperty("historyTurns").GetInt32() == 350);
+        Check(json.RootElement.GetProperty("customPrompt").GetString() == "");
+        Check(json.RootElement.GetProperty("ownerName").GetString() == "老大");
+    }
+    market.SetEnabled("portable-fish", false);
+    Check(!File.Exists(installedPersona));
+    market.Uninstall("portable-fish");
+    var promptShare = Path.Combine(dir, "prompt-only.zip");
+    using (var document = JsonDocument.Parse("""
+        {"customPrompt":"你是温和的图书管理员。","personaName":"不应分享","masterRoast":true,"emojiChance":0.8}
+        """))
+    {
+        PersonaPackage.Export(promptShare, document.RootElement, "图书管理员", "分享者", "prompt-librarian", "1.0.0", promptOnly: true);
+    }
+    using (var zip = ZipFile.OpenRead(promptShare))
+    {
+        Check(zip.Entries.Count == 2 && zip.GetEntry("persona.json").Length <= 65536);
+        using var json = JsonDocument.Parse(zip.GetEntry("persona.json").Open());
+        Check(json.RootElement.EnumerateObject().Count() == 1);
+        Check(json.RootElement.GetProperty("customPrompt").GetString() == "你是温和的图书管理员。");
+    }
+    Check(PluginMarket.ReadPackage(File.ReadAllBytes(promptShare)).Info.MinAppVersion == "4.1.0");
+    market.InstallLocal(promptShare);
+    market.SetEnabled("prompt-librarian", true);
+    Check(File.Exists(Path.Combine(dir, "data/plugins/prompt-librarian.persona.json")));
+    market.Uninstall("prompt-librarian");
+    var previousZip = File.ReadAllBytes(promptShare);
+    using (var emptyPrompt = JsonDocument.Parse("""{"customPrompt":"  "}"""))
+        Reject(() => PersonaPackage.Export(promptShare, emptyPrompt.RootElement, "空", "分享者", "prompt-empty", "1.0.0", promptOnly: true));
+    using (var largePrompt = JsonDocument.Parse(JsonSerializer.Serialize(new { customPrompt = new string('鱼', 24000) })))
+        Reject(() => PersonaPackage.Export(promptShare, largePrompt.RootElement, "太长", "分享者", "prompt-large", "1.0.0", promptOnly: true));
+    Check(File.ReadAllBytes(promptShare).SequenceEqual(previousZip));
+    Reject(() => PluginMarket.ReadPackage(Pack(persona, "persona.json", Encoding.UTF8.GetBytes("""{"customPrompt":"a","masterRoast":"false"}"""))));
+    Reject(() => PluginMarket.ReadPackage(Pack(persona, "persona.json", Encoding.UTF8.GetBytes("""{"customPrompt":"a","emojiChance":2}"""))));
+    Reject(() => PluginMarket.ReadPackage(Pack(persona, "persona.json", Encoding.UTF8.GetBytes("""{"customPrompt":""}"""))));
     if (args.Length > 1 && args[1] != "--live")
     {
         market.InstallLocal(args[1]);
@@ -258,6 +320,6 @@ namespace WhaleLauncher
 {
     internal static class UpdateManifestService
     {
-        internal static string LocalVersion(string _) => "4.1.2";
+        internal static string LocalVersion(string _) => "4.2.0";
     }
 }

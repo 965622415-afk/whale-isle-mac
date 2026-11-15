@@ -16,8 +16,9 @@ const bridge = require('./helpers/bridge-source');
 test('默认配置里有 voice，并且默认开启', () => {
   assert.ok(DEFAULT_CONFIG.voice, '缺少 voice 配置块');
   assert.equal(DEFAULT_CONFIG.voice.enabled, true);
-  assert.match(DEFAULT_CONFIG.voice.model, /asr/i);
+  assert.equal(DEFAULT_CONFIG.voice.provider, 'auto');
   assert.match(DEFAULT_CONFIG.voice.baseUrl, /^https:\/\//);
+  assert.match(DEFAULT_CONFIG.voice.baseUrl, /tools\/asr|dashscope/);
   assert.ok(Number(DEFAULT_CONFIG.voice.maxSeconds) >= 30);
 });
 

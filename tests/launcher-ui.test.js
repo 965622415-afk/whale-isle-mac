@@ -148,13 +148,69 @@ test('背景模糊与透明度可调，玻璃面板 + 自动蒙版保证文字�
   assert.ok(settings.includes('SetBackdropBlur') && settings.includes('SetBackdropOpacity') && settings.includes('SetSurfaceOpacity'), '滑块没接到 Appearance');
 });
 
-test('人设页左侧身份/说话方式子导航已移除，分区直接铺满', () => {
+test('人设页按四层分组，维护与能力开关不再混入角色设置', () => {
   const xaml = readLauncher('Views/PersonaPage.xaml');
   const code = readLauncher('Views/PersonaPage.xaml.cs');
   assert.doesNotMatch(xaml, /\bSubNav\b/, 'PersonaPage.xaml 里还留着 SubNav');
   assert.doesNotMatch(code, /\bSubNav\b/, 'PersonaPage.xaml.cs 里还引用 SubNav');
-  assert.ok(xaml.includes('x:Name="SecIdentity"'), '身份分区不该被误删');
+  for (const name of ['SecPreset', 'SecRelation', 'SecExpression', 'SecMemory']) {
+    assert.ok(xaml.includes(`x:Name="${name}"`));
+  }
+  assert.doesNotMatch(xaml, /OnJumpSection|Tag="Sec/);
+  assert.doesNotMatch(code, /OnJumpSection/);
+  assert.doesNotMatch(xaml, /FlagsHost|SecFlags|实验开关|ChkLinks/);
+  assert.doesNotMatch(code, /LoadFlagsAsync|OnFlagClick|HiddenFlags|ChkLinks|\/api\/features/);
+  assert.match(xaml, /Header="自定义补充提示词"/);
+  assert.match(xaml, /Header="清空指定对话记忆"/);
+  assert.match(xaml, /AutomationProperties.Name="搜索主人联系人"/);
+  assert.match(xaml, /昵称或自称不能授予权限/);
   assert.ok(xaml.includes('x:Name="Body"'), '主体滚动区还在');
+});
+
+test('实现开关唯一收纳到设置高级组，已有专页能力不再重复', () => {
+  const settings = readLauncher('Views/SettingsPage.xaml.cs');
+  for (const key of ['envContext', 'relations', 'groupAddressGuard', 'fightQuoteCheck', 'staticSystem', 'memorySnapshot', 'mediaCleanup']) {
+    assert.equal(settings.split(`Path = "features.${key}"`).length - 1, 1);
+  }
+  assert.doesNotMatch(settings, /Path = "features\.(stickers|javascriptPlugins)"/);
+});
+
+test('人设预设可打包分享，内置只读，安装人设可直接修改', () => {
+  const xaml = readLauncher('Views/PersonaPage.xaml');
+  const code = readLauncher('Views/PersonaPage.xaml.cs');
+  const dialog = readLauncher('AppDialog.cs');
+  for (const text of ['另存为预设', '复制为自建预设', '更新此预设', '重命名', '删除预设']) {
+    assert.ok(xaml.includes(text), '预设区缺少按钮：' + text);
+  }
+  for (const handler of ['OnSavePreset', 'OnCopyPreset', 'OnUpdatePreset', 'OnRenamePreset', 'OnDeletePreset']) {
+    assert.ok(xaml.includes('Click="' + handler + '"'), '按钮没接事件：' + handler);
+    assert.ok(code.includes(handler), '代码里没有处理函数：' + handler);
+  }
+  assert.match(code, /\/api\/persona\/preset\/save/, '另存/复制要走预设保存接口');
+  assert.match(code, /\/api\/persona\/preset\/rename/, '改名要走预设重命名接口');
+  assert.match(code, /\/api\/persona\/preset\/delete/, '删除要走预设删除接口');
+  assert.match(code, /presetSource/, '要用服务端返回的预设来源决定是否锁定');
+  assert.match(code, /ApplyPersonaEditState/, '要有人设锁定/解锁逻辑');
+  const lockBody = code.slice(code.indexOf('private void ApplyPersonaEditState()'), code.indexOf('private sealed class MemoryChatItem'));
+  assert.doesNotMatch(lockBody, /string\.Equals\(_presetSource, "market"/);
+  assert.match(xaml, /Content="打包分享".*Click="OnExportPersona"/);
+  assert.match(xaml, /Content="仅分享提示词".*Click="OnExportPrompt"/);
+  assert.match(code, /OnExportPrompt[\s\S]*ExportPersonaAsync\(true\)/);
+  assert.match(code, /\/api\/persona\/export/);
+  assert.match(code, /PersonaPackage\.Export/);
+  assert.match(code, /if \(!await SaveAllAsync/);
+  const lockStart = code.indexOf('var field in new Control[]');
+  const lockEnd = code.indexOf('}', lockStart);
+  assert.ok(lockStart >= 0 && lockEnd > lockStart, '找不到锁定字段列表');
+  const locked = code.slice(lockStart, lockEnd);
+  for (const name of ['TxtName', 'TxtAge', 'TxtJob', 'TxtLook', 'TxtPerson', 'TxtBack', 'TxtPrompt']) {
+    assert.ok(locked.includes(name), '身份/提示词字段应被锁定：' + name);
+  }
+  for (const name of ['TxtPrivate', 'TxtGroup', 'TxtTurns', 'TxtGroupTurns', 'TxtBubbles', 'SldEmoji', 'ChkProactive', 'ChkLinks', 'ChkOpinions']) {
+    assert.ok(!locked.includes(name), '长度/颜文字/开关不能被锁：' + name);
+  }
+  assert.match(dialog, /public static string Prompt\(/, '另存和改名需要输入框');
+  assert.doesNotMatch(xaml, /全部保存/, '人设改为热保存后不该再有保存按钮');
 });
 
 test('设置页去掉侧栏和标题，单列铺开，模型/高级模式/外观', () => {

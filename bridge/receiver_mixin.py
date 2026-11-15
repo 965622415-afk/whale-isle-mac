@@ -1,9 +1,96 @@
 # -*- coding: utf-8 -*-
 """Bridge runtime mixin: ReceiverMixin."""
 import html
+import os
 import re
+import threading
 
 import engine as G
+
+
+# 识别一条媒体最多等多久。长截图会拆成 2~3 段、每段一次看图请求（单次请求超时
+# 120 秒），所以图片给得宽一些；但必须有上限：这些活都跑在「同一会话串行」的消息
+# worker 里，不设上限时任何一次卡住都会让整个会话排到最后一条消息过期。
+MEDIA_TIMEOUTS = {'图片': 180.0, '表情': 150.0, '语音': 120.0}
+_MEDIA_TIMEOUT_FALLBACK = 120.0
+
+
+def run_media_with_timeout(recognize, kind, msg, log=None, timeout=None):
+    """在守护线程里跑媒体识别，超时就放弃这一条，先把会话放出来。
+
+    识别链路里有几处天然会长时间阻塞：从微信进程内存里反推图片 AES 密钥、
+    ffmpeg 转 wxgf、视觉 / 语音接口的单次请求超时。它们一旦卡住，同一个会话
+    后面的消息就只能排队 —— 用户看到的是「发了张图 Bot 就死了，重启才好」
+    （2026-11-15 16:15 本机日志）。这里只加时间上限，不改识别本身的行为：
+    超时按「这条不回话」处理，并把原因写回消息，交给调用方统一记 error 日志。
+    """
+    limit = MEDIA_TIMEOUTS.get(kind, _MEDIA_TIMEOUT_FALLBACK) if timeout is None else float(timeout)
+    box = {}
+
+    def work():
+        try:
+            box['text'] = recognize()
+        except BaseException as exc:  # noqa: BLE001 - 识别失败本来就不回话
+            box['err'] = exc
+
+    thread = threading.Thread(target=work, name='media-' + str(kind), daemon=True)
+    thread.start()
+    thread.join(max(0.1, limit))
+    if thread.is_alive():
+        reason = '识别超时（超过 %.0f 秒）' % limit
+        if isinstance(msg, dict):
+            msg['_media_fail'] = reason
+        if log:
+            log('识别超时（%.0f 秒）：类型=%s 消息id=%s:%s'
+                % (limit, kind, (msg or {}).get('shard') or '', (msg or {}).get('local_id')))
+        return ''
+    if 'err' in box:
+        exc = box['err']
+        if isinstance(msg, dict):
+            msg['_media_fail'] = type(exc).__name__
+        if log:
+            log('识别异常：类型=%s 消息id=%s:%s 原因=%s'
+                % (kind, (msg or {}).get('shard') or '', (msg or {}).get('local_id'),
+                   type(exc).__name__))
+        return ''
+    return box.get('text') or ''
+
+
+def image_key_note(db, downloader=None):
+    """图片密钥能不能离线派生：只输出状态，不碰任何密钥内容。"""
+    cfg = None
+    try:
+        cfg = getattr(db, 'cfg_dword', None)
+    except Exception:
+        cfg = None
+    if not cfg and downloader is not None:
+        cfg = getattr(downloader, '_cfg_dword', None)
+    cached = False
+    try:
+        workdir = str(getattr(db, 'workdir', '') or '')
+        cached = bool(workdir) and os.path.exists(os.path.join(workdir, 'image_keys.json'))
+    except Exception:
+        cached = False
+    if cfg:
+        return 'cfgDword 可用（能离线派生）'
+    return 'cfgDword 不可用（只能扫微信进程内存；密钥缓存%s）' % ('有' if cached else '没有')
+
+
+def image_dir_note(db, path):
+    """这张图来自当前账号目录，还是旧目录 / 另一个账号。"""
+    raw_current = str(getattr(db, 'account_dir', '') or '')
+    if not raw_current or not path:
+        return ''
+    try:
+        current = os.path.normcase(os.path.abspath(raw_current))
+        got = os.path.normcase(os.path.abspath(str(path)))
+    except Exception:
+        return ''
+    if not current or not got:
+        return ''
+    if got == current or got.startswith(current.rstrip('\\/') + os.sep):
+        return '当前账号目录'
+    return '非当前账号目录（旧目录或别的账号，密钥可能对不上）'
 
 
 def _nested_quote_text(quoted):
@@ -99,6 +186,12 @@ class ReceiverMixin:
             dl = self.MediaDownloader(self.db, save_dir=save_dir)
             from image_cache import bind_target_probe
             bind_target_probe(dl)
+            try:
+                from media_key_compat import install_key_scan_guard
+                install_key_scan_guard(dl, log=G.log)
+                G.log('图片密钥：%s' % image_key_note(self.db, dl))
+            except Exception as _e:
+                G.log('图片密钥扫描护栏没装上（不影响其它识别）：', repr(_e))
             try:
                 from media_fallback import install_media_fallback
                 installed = install_media_fallback(dl, self.db, log=G.log, root_names=G.DB_ROOT_NAMES)
@@ -197,8 +290,10 @@ class ReceiverMixin:
             lid = msg.get('local_id')
             shard = msg.get('shard')
             if not user or lid is None:
+                G.log('图片识别跳过：消息缺会话或消息 id')
                 return ''
             path = None
+            key_missing = False
             for _attempt in range(4):
                 for _tier in ('full', 'best'):
                     try:
@@ -206,19 +301,42 @@ class ReceiverMixin:
                     except Exception as _e:
                         G.log('图片下载失败（tier=%s）：%r' % (_tier, _e))
                         path = None
+                        # 密钥取不到时再等也不会变：后面的重试只是白等，直接转界面兜底。
+                        if '密钥' in str(_e):
+                            key_missing = True
                     if path:
                         G.log('图片档位：%s → %d KB' % (_tier, G.os.path.getsize(path) // 1024))
+                        _origin = image_dir_note(getattr(self, 'db', None), path)
+                        if _origin and _origin != '当前账号目录':
+                            G.log('图片来源：%s' % _origin)
                         break
-                if path:
+                if path or key_missing:
                     break
                 if _attempt < 3:
                     G.log('图片缓存尚未就绪，等待重试（%d/3）' % (_attempt + 1))
                     G.time.sleep((0.5, 1.0, 2.0)[_attempt])
-            if not path:
+            if key_missing and not path:
+                G.log('图片密钥取不到，跳过缓存重试，直接走界面兜底')
+            raw = b''
+            if path:
+                with open(path, 'rb') as f:
+                    raw = f.read()
+            else:
                 G.log('图片读取失败：已重试；请确认接收端微信已下载图片（消息id=%s，分片=%s）' % (lid, shard))
-                return ''
-            with open(path, 'rb') as f:
-                raw = f.read()
+                try:
+                    _key_note = image_key_note(getattr(self, 'db', None), self._get_media())
+                except Exception:
+                    _key_note = '密钥状态未知'
+                G.log_throttled('img-keys:' + _key_note,
+                                '图片密钥状态：%s；消息id=%s' % (_key_note, lid))
+                # 磁盘这条路走不通（多半是密钥取不到）：退到界面兜底，让微信自己
+                # 把画出来的图交出来（导出明文 / 截预览窗）。失败只是这一条不回话。
+                fallback = getattr(self, 'image_ui_fallback', None)
+                raw = fallback(msg) if callable(fallback) else b''
+                if not raw:
+                    if isinstance(msg, dict):
+                        msg['_media_fail'] = '本地图片解不开，界面兜底也没取到'
+                    return ''
             if len(raw) > 8 * 1024 * 1024:
                 G.log('图片太大，跳过')
                 return ''
@@ -229,8 +347,13 @@ class ReceiverMixin:
                     conv = None
                     G.log('wxgf 转码异常：', repr(_e))
                 if not conv:
-                    G.log('这张图是 wxgf/HEVC，本机 ffmpeg 没能转出来，跳过（请检查桥接启动时的 ffmpeg 状态）')
-                    return ''
+                    G.log('这张图是 wxgf/HEVC，本机 ffmpeg 没能转出来；改走界面兜底（请同时检查桥接启动时的 ffmpeg 状态）')
+                    fallback = getattr(self, 'image_ui_fallback', None)
+                    conv = fallback(msg) if callable(fallback) else b''
+                    if not conv:
+                        if isinstance(msg, dict):
+                            msg['_media_fail'] = 'wxgf 转码失败，界面兜底也没取到'
+                        return ''
                 raw = conv
                 ext = '.jpg'
             elif raw[:8] == b'\x89PNG\r\n\x1a\n':
@@ -240,7 +363,7 @@ class ReceiverMixin:
             elif raw[:3] == b'GIF':
                 ext = '.gif'
             else:
-                ext = G.os.path.splitext(path)[1].lower()
+                ext = G.os.path.splitext(path or '')[1].lower()
                 if ext not in ('.jpg', '.jpeg', '.png', '.gif'):
                     G.log('图片格式不认识（%s），跳过' % raw[:4])
                     return ''
@@ -299,6 +422,47 @@ class ReceiverMixin:
             G.log_throttled('img-exc:' + type(e).__name__, '图片识别失败：', repr(e))
             return ''
 
+    def image_ui_fallback(self, msg):
+        """磁盘图片解不开时的界面兜底：让微信导出明文，或截预览窗。
+
+        只在 ``describe_image`` 确认本地取不到图 / 解不开图之后调用；所有副作用
+        （点气泡、开预览窗、保存对话框）都在 ``image_ui_fallback`` 模块里，并且
+        整段有时间上限。失败返回 ``b''``，按「这条不回话」处理。
+        """
+        try:
+            from image_ui_fallback import read_image_via_ui
+            media = self._get_media()
+            try:
+                chat_name = self.display_name(msg.get('username') or '')
+            except Exception:
+                chat_name = ''
+            # 界面兜底真的会点鼠标/开预览窗：必须和发送串行，否则两条消息同时
+            # 操作微信窗口会把点击落到别人的会话上。
+            lock = getattr(self, 'send_lock', None)
+            acquired = False
+            try:
+                if lock is not None:
+                    acquired = lock.acquire(timeout=5)
+                    if not acquired:
+                        G.log('界面兜底：发送还在进行，这次先跳过（不抢窗口）')
+                        return b''
+            except Exception:
+                acquired = False
+            try:
+                return read_image_via_ui(media, msg, chat_name=chat_name,
+                                         save_dir=getattr(media, 'save_dir', None), log=G.log)
+            finally:
+                if acquired:
+                    try:
+                        lock.release()
+                    except Exception:
+                        pass
+        except Exception as exc:  # noqa: BLE001 - 兜底失败不影响其它消息
+            G.log('界面兜底异常：消息id=%s:%s 原因=%s(%s)'
+                  % (msg.get('shard') or '', msg.get('local_id'),
+                     type(exc).__name__, str(exc)[:120]))
+            return b''
+
     def describe_emoji(self, msg):
         """表情包 → 文字描述；失败返回空串（调用方跳过，不回话）。"""
         try:
@@ -355,6 +519,7 @@ class ReceiverMixin:
             lid = msg.get('local_id')
             shard = msg.get('shard')
             if not user or lid is None:
+                G.log('语音识别跳过：消息缺会话或消息 id')
                 return ''
             path = self._get_media().download_voice(user, int(lid), shard=shard)
             if not path:
@@ -384,7 +549,7 @@ class ReceiverMixin:
                     w.setframerate(G.VOICE_SAMPLE_RATE)
                     w.writeframes(raw)
                 with open(wav_path, 'rb') as f:
-                    text = G.asr_transcribe(f.read(), G.VOICE_API_KEY, G.VOICE_MODEL, G.VOICE_BASE_URL, G.VOICE_TIMEOUT)
+                    text = G.asr_transcribe(f.read(), G.VOICE_API_KEY, G.VOICE_MODEL, G.VOICE_BASE_URL, G.VOICE_TIMEOUT, G.VOICE_PROVIDER)
             finally:
                 try:
                     G.os.remove(wav_path)
@@ -402,11 +567,12 @@ class ReceiverMixin:
     def on_message_inner(self, msg, listener):
 
         def media_failed(kind):
-            """识别失败照旧不回话，但补一条能把「哪条、谁的、为什么没回」对上的 error 日志。
+            """识别失败补一条能把「哪条、谁的、为什么没回」对上的 error 日志。
 
             以前失败只在识别函数里留零散日志（连消息 id 都没有），事后完全没法回答
             「这条消息她为什么没回」。节流 key 带消息 id：同一条反复失败只记一次，
-            别的消息照常各记一条，不会被节流误吞。
+            别的消息照常各记一条，不会被节流误吞。图片失败不再直接沉默，会把
+            「没取到图」的说明交给模型回一句（见下面的占位文本）。
             """
             msg_id = '%s:%s:%s' % (username, msg.get('shard') or '', msg.get('local_id'))
             try:
@@ -421,31 +587,55 @@ class ReceiverMixin:
             if not who:
                 who = '群友' if username.endswith('@chatroom') else '微信好友'
             reason = msg.pop('_media_fail', None) or '空描述（识别结果为空）'
-            G.log_throttled('media-fail:%s:%s' % (msg_id, kind), '识别失败（这条不回话）：会话=%s 发送者=%s 类型=%s 消息id=%s 原因=%s' % (G.safe_id(chat), G.safe_name(who), kind, msg_id, reason), emit=G.log_error)
+            G.log_throttled('media-fail:%s:%s' % (msg_id, kind), '识别失败：会话=%s 发送者=%s 类型=%s 消息id=%s 原因=%s' % (G.safe_id(chat), G.safe_name(who), kind, msg_id, reason), emit=G.log_error)
+
+        def skipped(reason):
+            """每条没处理的消息都留痕：排查「她为什么没回」不能只靠猜。
+
+            同一个会话同一种原因 60 秒内只打一行（并给出被折叠的条数），
+            正常聊天不会被刷屏，出问题时又能看到到底卡在哪一步。
+            """
+            G.log_throttled(
+                'msg-skip:%s:%s' % (reason, msg.get('username') or ''),
+                '消息未处理：%s；会话=%s 消息id=%s:%s:%s'
+                % (reason, G.safe_id(msg.get('username') or ''),
+                   msg.get('username') or '', msg.get('shard') or '', msg.get('local_id')),
+                ttl=60,
+            )
+
         try:
             username = msg.get('username') or ''
             if not username:
+                skipped('消息缺少会话标识')
                 return
             sender = msg.get('sender_username') or ''
             if sender == self.me:
+                skipped('自己发出的消息')
                 return
             mtype = msg.get('type') or ''
             content = G.fix_garbled((msg.get('content') or '').strip())
+            media_placeholder = False
             is_emoji = mtype in ('表情', '动画表情') or (mtype == '图片' and '<emoji' in content)
             if is_emoji:
-                desc = self.describe_emoji(msg)
+                desc = run_media_with_timeout(lambda: self.describe_emoji(msg), '表情', msg, G.log)
                 if not desc:
                     media_failed('表情')
                     return
                 content = '（对方发了一个表情包，画面是：%s）' % desc
             elif mtype == '图片':
-                desc = self.describe_image(msg)
+                desc = run_media_with_timeout(lambda: self.describe_image(msg), '图片', msg, G.log)
                 if not desc:
+                    # 取不到图就装没看见，用户只会觉得「又卡死了」。改成让她自然地回一句：
+                    # 明确禁止编造画面，只允许问一句 / 让对方再发。
                     media_failed('图片')
-                    return
-                content = '（对方发了一张图片，图里是：%s）' % desc
+                    content = ('（对方发了一张图片，但这边没取到、也看不清。'
+                               '不要编造图里的内容；可以自然地回一句，比如问对方图怎么了、'
+                               '或让对方再发一次 / 说说图里是什么）')
+                    media_placeholder = True
+                else:
+                    content = '（对方发了一张图片，图里是：%s）' % desc
             if mtype == '语音':
-                said = self.transcribe_voice(msg)
+                said = run_media_with_timeout(lambda: self.transcribe_voice(msg), '语音', msg, G.log)
                 if not said:
                     G.log('语音没识别出内容，先不说话')
                     media_failed('语音')
@@ -457,6 +647,7 @@ class ReceiverMixin:
             _quote_parsed = _quote_text is not None
             if _quote_parsed:
                 if not _quote_text:
+                    skipped('引用消息里没有可读内容')
                     return
                 content = _quote_text
             if not _quote_parsed and mtype not in ('文本', '语音', '图片', '表情', '动画表情'):
@@ -475,18 +666,22 @@ class ReceiverMixin:
                     title = (mt.group(1).strip() if mt else '')[:60]
                     content = '分享了一个链接：%s %s' % (title, mu.group(1).strip())
                 else:
+                    skipped('卡片/链接/文件消息没有可读正文（类型=%s）' % (mtype or '未知'))
                     return
             if G.ONLY_CHATS:
                 try:
                     if self.display_name(username) not in G.ONLY_CHATS:
+                        skipped('不在白名单会话内')
                         return
                 except Exception:
+                    skipped('白名单核对失败（读不到会话名）')
                     return
             if mtype == '文本' and not _quote_parsed:
                 content = G.fix_garbled((msg.get('content') or '').strip())
                 if username.endswith('@chatroom'):
                     content = G._GROUP_SENDER_PREFIX_RE.sub('', content, count=1).strip()
             if not content or (content.startswith('<') and mtype != '文本'):
+                skipped('正文为空，或仍是没解析出来的 XML（类型=%s）' % (mtype or '未知'))
                 return
             is_group = username.endswith('@chatroom')
             nickname = ''
@@ -498,10 +693,17 @@ class ReceiverMixin:
                 nickname = '群友' if is_group else '微信好友'
             if G.is_system_notice(username, nickname, content):
                 if G.ONLY_CHATS:
+                    skipped('系统通知（白名单模式）')
                     return
                 G.log('跳过系统通知：', G.safe_name(nickname), '：', G.safe_text(content))
                 return
-            if G.duplicate_guard(username, sender, content):
+            # 取不到图的占位文本对同一个会话是固定的：如果直接拿去查重，连发两张图
+            # 的第二张会被当成「重复消息」丢掉。所以占位文本按消息 id 查重，
+            # 只挡微信真的把同一条消息重复投递的情况。
+            _guard_text = content
+            if media_placeholder:
+                _guard_text = '%s#%s:%s' % (content, msg.get('shard') or '', msg.get('local_id'))
+            if G.duplicate_guard(username, sender, _guard_text):
                 G.log('跳过重复消息：', G.safe_name(nickname), '：', G.safe_text(content))
                 return
             if '拍了拍' in content and '<url>' not in content:
@@ -667,7 +869,9 @@ class ReceiverMixin:
             elif G.STICKER_TEST_ON:
                 G.log('[sticker] stage=delivery result=skip reason=no_job_in_reply')
         except Exception as e:
-            G.log('处理消息异常：', repr(e))
+            G.log('处理消息异常：会话=%s 消息id=%s:%s 原因=%r'
+                  % (G.safe_id(msg.get('username') or ''),
+                     msg.get('shard') or '', msg.get('local_id'), e))
 
     def merge_text_batch(self, run, username):
         """同一个人连发的一串纯文本 → 合成一条消息交给服务端。
@@ -713,13 +917,22 @@ class ReceiverMixin:
                 try:
                     self.on_message_inner(msg, listener)
                 except Exception as e:
-                    G.log('处理消息异常：', repr(e))
+                    G.log('处理消息异常：会话=%s 消息id=%s:%s 原因=%r'
+                          % (G.safe_id((msg or {}).get('username') or ''),
+                             (msg or {}).get('shard') or '',
+                             (msg or {}).get('local_id'), e))
 
     def on_message(self, msg, listener):
         try:
             username = msg.get('username') or ''
             create_time = float(msg.get('create_time') or 0)
             if create_time and create_time < G.START_TS - G.SKIP_OLDER_THAN:
+                G.log_throttled(
+                    'msg-too-old:%s' % (username or 'unknown'),
+                    '消息未处理：早于本次启动太多（消息id=%s:%s，创建时间=%s）'
+                    % (msg.get('shard') or '', msg.get('local_id'), int(create_time)),
+                    ttl=60,
+                )
                 return
             if create_time and G.time.time() - create_time > G.STALE_AFTER:
                 G.log('跳过过期消息（%.0fs 前）：%s' % (G.time.time() - create_time, G.safe_text(msg.get('content') or '')))
@@ -728,10 +941,17 @@ class ReceiverMixin:
             if self.batches.push(chat, msg):
                 try:
                     queued = self.pipeline.submit(chat, self.flush_chat, chat, listener)
-                except Exception:
+                except Exception as e:
                     queued = False
+                    G.log('消息入队失败：', repr(e))
                 if not queued:
                     self.batches.release(chat)
+                    G.log_throttled(
+                        'queue-closed:%s' % chat,
+                        '消息没能排上队（调度已关闭）：会话=%s 消息id=%s:%s'
+                        % (G.safe_id(chat), msg.get('shard') or '', msg.get('local_id')),
+                        ttl=60,
+                    )
         except Exception as e:
             G.log('提交消息处理失败：', repr(e))
 

@@ -514,8 +514,8 @@ test('管理员能调上下文长度和主动/观点开关', async () => {
   assert.equal(config.persona.opinions, false);
 
   const next = await bot.decide(master('在吗'));
-  assert.match(next.system, /【主动】/);
-  assert.match(next.system, /【立场】/);
+  assert.match(next.system, /主动延伸话题：关闭/);
+  assert.match(next.system, /主动表达观点：关闭/);
 
   const r3 = await bot.decide(master('主动 开'));
   assert.equal(config.persona.proactive, true);

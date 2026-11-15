@@ -6,6 +6,7 @@
  */
 const fs = require('node:fs');
 const path = require('node:path');
+const { IDENTITY_FIELDS } = require('./profile');
 
 const FILE_NAME = 'persona.json';
 
@@ -33,6 +34,11 @@ function load(config) {
 /* 现在它们只归 config.json；persona.json 只留人设本身。                   */
 /* ------------------------------------------------------------------ */
 const CONFIG_PATHS = {
+  ownerName: 'persona.ownerName',
+  aliases: 'persona.aliases',
+  emojiChance: 'chat.emojiChance',
+  discussionMaxChars: 'chat.discussionMaxChars',
+  masterRoast: 'persona.masterRoast',
   privateMaxChars: 'chat.privateMaxChars',
   groupMaxChars: 'chat.groupMaxChars',
   maxBubbles: 'chat.maxBubbles',
@@ -44,7 +50,9 @@ const CONFIG_PATHS = {
 };
 
 function normalized(key, value) {
-  if (key === 'links' || key === 'freeChat') return Boolean(value);
+  if (key === 'ownerName') return String(value || '').trim().slice(0, 24) || '主人';
+  if (key === 'aliases') return Array.isArray(value) ? value.filter(v => typeof v === 'string').map(v => v.trim()).filter(Boolean).slice(0, 30) : undefined;
+  if (key === 'links' || key === 'freeChat' || key === 'masterRoast') return Boolean(value);
   if (key === 'mutedGroups') return Array.isArray(value) ? value.slice() : undefined;
   const n = Number(value);
   return Number.isFinite(n) ? n : undefined;
@@ -160,10 +168,20 @@ function save(config, patch) {
       Number(config.chat.groupHistoryTurns || 150) + 2,
     ));
   }
+  // 当前人设来自自建预设时，把这次保存回写预设；内置/市场预设不动
+  try {
+    const source = String((config.persona && config.persona.sourcePreset) || '');
+    if (source) require('./presets').updateFromConfig(config, source);
+  } catch { /* 预设回写失败不影响本次人设保存 */ }
   return forApply;
 }
 
 const DEFAULTS = {
+  ownerName: '主人',
+  aliases: ['鲸鲸', '小鲸娘', '鲸娘', '深鲸娘', '鲸鱼娘', '小鲸'],
+  emojiChance: 0,
+  discussionMaxChars: 400,
+  masterRoast: false,
   emoji: '正常',
   // 必须和 DEFAULT_CONFIG.chat 保持同一套值，否则「恢复默认」会写回另一套数。
   privateMaxChars: 100,
@@ -250,10 +268,9 @@ function apply(config, data) {
   // 情绪开关已移除：旧配置里残留的 emotions 直接忽略，不再写回
   delete config.persona.emotions;
   // 主人被骂时她能不能还嘴（默认关；开了就允许毒舌互怼，但不许真脏字）
-  if (data.masterRoast !== undefined) config.persona.masterRoast = Boolean(data.masterRoast);
   config.persona.proactive = data.proactive !== false;
   config.persona.opinions = data.opinions !== false;
-  for (const k of ['name', 'job', 'appearance', 'personality', 'background']) {
+  for (const k of Object.keys(IDENTITY_FIELDS)) {
     if (data[k] !== undefined) config.persona[k] = String(data[k] || '');
   }
   if (data.age !== undefined) config.persona.age = Number(data.age) || 23;

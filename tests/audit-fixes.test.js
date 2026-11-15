@@ -48,7 +48,7 @@ test('语音：Key 查找链包含 config.deepseek.apiKey，并且 reload 会刷
   assert.match(voiceSrc, /deepseek.*apiKey|apiKey.*deepseek/s, '要回退到 deepseek.apiKey');
   assert.match(
     bridgeSrc,
-    /global VOICE_ENABLED, VOICE_BASE_URL, VOICE_MODEL, VOICE_API_KEY, VOICE_TIMEOUT, VOICE_MAX_SECONDS/,
+    /global VOICE_ENABLED, VOICE_PROVIDER, VOICE_BASE_URL, VOICE_MODEL, VOICE_API_KEY, VOICE_TIMEOUT, VOICE_MAX_SECONDS/,
     'reload_config 必须能刷新语音这几项'
   );
   assert.match(bridgeSrc, /VOICE_TIMEOUT = float\(vo\.get\(["']timeoutMs["']\)\) \/ 1000\.0/, '热更新要刷新超时');

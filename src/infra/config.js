@@ -176,7 +176,17 @@ const DEFAULT_CONFIG = {
   chat: { privateMaxChars: 100, groupMaxChars: 70, historyTurns: 120, groupHistoryTurns: 100, maxBubbles: 2, discussionMaxChars: 400, emojiChance: 0 },
   // 联网：问天气/新闻这类实时问题时现搜。city 用来把「今天天气怎么样」补成「上海 天气」，
   // 搜到的结果准得多；留空就按对方原话搜（也能用，但经常搜到别的城市）。
-  websearch: { enabled: true, city: '', timeoutMs: 8000 },
+  // enabled 是内部/测试用闸门：设置页不提供，加载配置时强制 true。API 搜索另有总开关。
+  websearch: {
+    enabled: true,
+    city: '',
+    timeoutMs: 8000,
+    // API 搜索：一个总开关；开启后才使用 providers 里勾选的搜索 API。
+    api: { enabled: false, providers: [] },
+    deepseek: { apiKey: '' },
+    // 知乎开放平台：免费额度有限，默认 4999 次/天，超了只走本地搜索。
+    zhihu: { accessSecret: '', dailyLimit: 4999 },
+  },
   // 环境：拼进提示词 <env> 块的稳定信息（开关在 features.envContext）。
   // location 是给人填的，可以精确到区（「厦门市思明区」）；留空就交给自动探测，
   // 探测也拿不到才退回 websearch.city（只有城市级），都没有就整行不写。
@@ -242,12 +252,15 @@ const DEFAULT_CONFIG = {
   },
 
   vision: { apiKey: '', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v-flash', timeoutMs: 30000 },
-  // 语音识别：默认阿里云百炼 qwen3-asr-flash，apiKey 留空则用 settings.json / deepseek.apiKey
+  // 语音识别：默认走 DeepSeek（/v1/tools/asr），老配置按 baseUrl 自动判断百炼。
+  // provider=auto 时：地址含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。
+  // apiKey 留空则用 settings.json / 同源服务商的 Key。
   voice: {
     enabled: true,
+    provider: 'auto',
     apiKey: '',
-    baseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
-    model: 'qwen3-asr-flash',
+    baseUrl: 'https://api.deepseek.com/v1/tools/asr',
+    model: '',
     timeoutMs: 90000,
     maxSeconds: 120,
   },
@@ -468,6 +481,9 @@ function loadConfig({ root = projectRoot(), env = process.env, readOnly = false 
       }
     } catch { /* 写不了就算了，内存里已经生效 */ }
   }
+  // 本地搜索不再提供关闭入口：老配置里的 false 也不生效。
+  // 需要测试隔离时仍可直接构造 config 对象（不经过 loadConfig）。
+  cfg.websearch.enabled = true;
   cfg.server.port = Number(env.PORT || cfg.server.port) || 8787;
   cfg.server.host = env.HOST || cfg.server.host;
   if (env.DEEPSEEK_MODEL) cfg.deepseek.model = env.DEEPSEEK_MODEL;

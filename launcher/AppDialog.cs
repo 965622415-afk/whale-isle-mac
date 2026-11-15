@@ -35,6 +35,88 @@ namespace WhaleLauncher
             });
         }
 
+        /// <summary>输入框：确定返回去掉首尾空白的文本，取消/关闭返回 null。</summary>
+        public static string Prompt(Window owner, string message, string title = "鲸鲸", string initial = "",
+            string okText = "保存", string cancelText = "取消")
+        {
+            return OnUi(() =>
+            {
+                var ownerWin = ResolveOwner(owner);
+                var win = new Window
+                {
+                    Title = string.IsNullOrWhiteSpace(title) ? "鲸鲸" : title,
+                    Width = 480,
+                    SizeToContent = SizeToContent.Height,
+                    ResizeMode = ResizeMode.NoResize,
+                    WindowStartupLocation = ownerWin != null
+                        ? WindowStartupLocation.CenterOwner
+                        : WindowStartupLocation.CenterScreen,
+                    ShowInTaskbar = false,
+                    Owner = ownerWin,
+                };
+                win.SetResourceReference(Window.BackgroundProperty, "Bg");
+
+                var panel = new StackPanel { Margin = new Thickness(22, 20, 22, 18) };
+                var primary = Application.Current?.TryFindResource("Primary") as Style;
+                var ghost = Application.Current?.TryFindResource("Ghost") as Style;
+                var textBrush = Application.Current?.TryFindResource("Text") as Brush;
+                var bodyBrush = Application.Current?.TryFindResource("Text2") as Brush;
+
+                panel.Children.Add(new TextBlock
+                {
+                    Text = win.Title,
+                    FontSize = 15,
+                    FontWeight = FontWeights.SemiBold,
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = textBrush,
+                });
+                panel.Children.Add(new TextBlock
+                {
+                    Text = message ?? string.Empty,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0, 10, 0, 0),
+                    LineHeight = 21,
+                    Foreground = bodyBrush,
+                });
+
+                var box = new TextBox
+                {
+                    Text = initial ?? string.Empty,
+                    Margin = new Thickness(0, 12, 0, 0),
+                    Padding = new Thickness(8, 5, 8, 5),
+                    MinWidth = 200,
+                };
+                box.SetResourceReference(Control.BackgroundProperty, "FieldBg");
+                box.SetResourceReference(Control.ForegroundProperty, "Text");
+                panel.Children.Add(box);
+
+                var row = new StackPanel
+                {
+                    Orientation = Orientation.Horizontal,
+                    HorizontalAlignment = HorizontalAlignment.Right,
+                    Margin = new Thickness(0, 16, 0, 0),
+                };
+                var cancel = new Button { Content = cancelText, Style = ghost, Padding = new Thickness(16, 5, 16, 5), IsCancel = true };
+                cancel.Click += (_, _) => win.DialogResult = false;
+                row.Children.Add(cancel);
+                var ok = new Button
+                {
+                    Content = okText,
+                    Style = primary,
+                    Padding = new Thickness(16, 5, 16, 5),
+                    Margin = new Thickness(10, 0, 0, 0),
+                    IsDefault = true,
+                };
+                ok.Click += (_, _) => win.DialogResult = true;
+                row.Children.Add(ok);
+                panel.Children.Add(row);
+
+                win.Content = panel;
+                win.Loaded += (_, _) => { box.Focus(); box.SelectAll(); };
+                return win.ShowDialog() == true ? box.Text.Trim() : null;
+            });
+        }
+
         /// <summary>长文本查看器（UIA 自检、日志导出等）。</summary>
         public static void ShowText(string title, string text)
         {

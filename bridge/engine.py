@@ -210,7 +210,7 @@ def reload_config(path=None, *, config=None):
     global ACCOUNT_GUARD, WINDOW_HWND, STICKER_TEST_ON, STICKER_COLLECT
     global CARE_ENABLED, CARE_QUIET_MIN
     global STALE_AFTER, SYSTEM_SENDER_NAMES, BASE_SYSTEM_SENDERS, MASTER_WXID
-    global VOICE_ENABLED, VOICE_BASE_URL, VOICE_MODEL, VOICE_API_KEY, VOICE_TIMEOUT, VOICE_MAX_SECONDS
+    global VOICE_ENABLED, VOICE_PROVIDER, VOICE_BASE_URL, VOICE_MODEL, VOICE_API_KEY, VOICE_TIMEOUT, VOICE_MAX_SECONDS
     global CARE_ENABLED, CARE_ALLOW_GROUPS, CARE_ONLY_MASTER, CARE_ALLOW_OTHERS
     try:
         if config is None:
@@ -355,8 +355,9 @@ def write_accounts_cache(db_dir, account='', nick='', probe_others=True, deadlin
         return False
 BRIDGE_LOCK_PORT = 47821
 VOICE_ENABLED = True
-VOICE_BASE_URL = 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation'
-VOICE_MODEL = 'qwen3-asr-flash'
+VOICE_PROVIDER = 'auto'
+VOICE_BASE_URL = 'https://api.deepseek.com/v1/tools/asr'
+VOICE_MODEL = ''
 VOICE_API_KEY = ''
 VOICE_TIMEOUT = 90
 VOICE_MAX_SECONDS = 120
