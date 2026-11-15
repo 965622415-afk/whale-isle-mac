@@ -40,6 +40,8 @@ try
     var signed = Convert.ToBase64String(signingKey.SignData(signedBytes, HashAlgorithmName.SHA256, DSASignatureFormat.Rfc3279DerSequence));
     Check(PluginTrust.Verify(signedBytes, signed));
     Check(!PluginTrust.Verify(signedBytes, signed + "x"));
+    // 市场签名暂时隐藏：开关保持 false，但验签能力本身必须还在，恢复后无需重写。
+    Check(!PluginMarket.MarketSignatureEnabled);
     Check(PluginMarket.SafeText("正常\n伪造", 80) == "正常 伪造");
     Check(!PluginMarket.SafeText("A\u202EB", 80).Contains('\u202E'));
     Check(PluginMarket.SafeMultiline("第一行\n第二行\u0000") == "第一行\n第二行");
