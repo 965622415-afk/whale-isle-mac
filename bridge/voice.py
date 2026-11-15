@@ -56,10 +56,16 @@ def effective_provider(provider, base_url):
     p = str(provider or "auto").strip().lower()
     if p in ("deepseek", "dashscope", "custom"):
         return p
-    url = str(base_url or "").lower()
-    if "dashscope" in url:
+    url = str(base_url or "").strip()
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        path = (parts.path or "").rstrip("/").lower()
+    except ValueError:
+        host, path = "", ""
+    if host == "dashscope.aliyuncs.com" or host.startswith("dashscope-"):
         return "dashscope"
-    if "api.deepseek.com" in url or "/v1/tools/asr" in url:
+    if host == "api.deepseek.com" or host.endswith(".deepseek.com") or path.endswith("/v1/tools/asr"):
         return "deepseek"
     return "custom"
 
