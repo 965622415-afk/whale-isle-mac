@@ -97,7 +97,7 @@ internal static class PersonaPackage
         var payload = JsonSerializer.SerializeToUtf8Bytes(persona, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
         if (payload.Length > (promptOnly ? 64 : 192) * 1024)
             throw new InvalidDataException(promptOnly ? "提示词文件超过市场 64 KiB 上限，请精简后再分享" : "人设文件超过 192 KiB");
-        var info = new PluginInfo(id, title.Trim(), author.Trim(), version, promptOnly ? "4.1.0" : "4.2.0",
+        var info = new PluginInfo(id, title.Trim(), author.Trim(), version, promptOnly ? "4.1.0" : "4.1.5",
             promptOnly ? "纯提示词人设" : "可编辑的人设与表达设置", null, 1, Kind: "persona");
         var temp = destination + "." + Guid.NewGuid().ToString("N") + ".tmp";
         try

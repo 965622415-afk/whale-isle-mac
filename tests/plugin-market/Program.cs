@@ -151,7 +151,7 @@ try
         Check(zip.GetEntry("plugin.json") != null && zip.GetEntry("persona.json") != null);
     }
     var portablePackage = PluginMarket.ReadPackage(File.ReadAllBytes(share));
-    Check(portablePackage.Info.MinAppVersion == "4.2.0" && portablePackage.Info.Kind == "persona");
+    Check(portablePackage.Info.MinAppVersion == "4.1.5" && portablePackage.Info.Kind == "persona");
     Check(!portablePackage.Persona.Contains("must-not-share") && !portablePackage.Persona.Contains("permissions"));
     Check(market.InstallLocal(share));
     market.SetEnabled("portable-fish", true);
@@ -320,6 +320,6 @@ namespace WhaleLauncher
 {
     internal static class UpdateManifestService
     {
-        internal static string LocalVersion(string _) => "4.2.0";
+        internal static string LocalVersion(string _) => "4.1.5";
     }
 }
