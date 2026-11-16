@@ -505,11 +505,19 @@ test('群禁言魔咒只给同一个微信私聊里的主人，并在 30 分钟�
   assert.equal((await bot.decide(owner('禁言 测试群'))).commandType, 'admin_hint');
 });
 
-test('讨论类问题会标记为 discussion，普通闲聊不会', async () => {
+test('讨论只按当前消息判断，同会话短句及旧讨论存档不触发长篇回复', async () => {
   const { bot, cleanup } = makeBot();
   const d1 = await bot.decide(privateMsg('你觉得人应该追求稳定还是冒险'));
   assert.equal(d1.msg.discussion, true);
-  // 换个聊天对象：讨论模式的 10 分钟粘性只作用于原会话
+  const state = bot.store.getState(d1.key);
+  state.discussUntil = Date.now() + 10 * 60000;
+  for (const text of ['我调了一下', '唉还得调啊', '好的', '在吗']) {
+    const next = await bot.decide(privateMsg(text));
+    assert.equal(next.msg.discussion, false, text);
+    assert.equal(state.discussUntil, 0);
+    assert.doesNotMatch(next.system + (next.tail || ''), /【认真讨论模式】/);
+  }
+  assert.equal((await bot.decide(privateMsg('你觉得人应该追求稳定还是冒险'))).msg.discussion, true);
   const d2 = await bot.decide(privateMsg('在吗', { chatId: 's2' }));
   assert.equal(d2.msg.discussion, false);
   cleanup();

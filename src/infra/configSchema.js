@@ -19,7 +19,14 @@ const { parseBoolean, parseNumber } = require('./configValues');
  * 不改行为：合法值原样通过；非法值只报错，不偷偷改。
  */
 
+const API_KEY_SPEC = Object.freeze({ type: 'string', maxLen: 250, redactValue: true });
 const FIELDS = {
+  // 外部服务自行决定凭据格式，本地路由的短 Key 也应合法。
+  'deepseek.apiKey': API_KEY_SPEC,
+  'vision.apiKey': API_KEY_SPEC,
+  'voice.apiKey': API_KEY_SPEC,
+  'websearch.deepseek.apiKey': API_KEY_SPEC,
+  'websearch.zhihu.accessSecret': API_KEY_SPEC,
   // ---- 服务 ----
   'server.port': { type: 'int', min: 0, max: 65535 },
   'server.host': { type: 'string', maxLen: 255 },
@@ -277,4 +284,4 @@ function formatErrors(errors) {
   return errors.map((e) => `${e.path}：${e.message}`).join('；');
 }
 
-module.exports = { FIELDS, validate, checkValue, formatErrors, getByPath };
+module.exports = { FIELDS, API_KEY_SPEC, validate, checkValue, formatErrors, getByPath };

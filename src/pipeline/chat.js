@@ -896,9 +896,9 @@ class Bot {
 
     // 认真讨论（不是随口闲聊）→ 允许说长一点、有观点
     const discussPattern = /(讨论|探讨|你觉得|你怎么看|你认为|为什么|该不该|要不要|是不是应该|如何选择|怎么选|怎么看|有道理吗|值得吗|价值观|人生|意义|观点|看法|利弊|优缺点)/;
-    const discussUntil = Number(state.discussUntil) || 0;
-    const discussion = Boolean(discussUntil > nowMs || (clean.text && clean.text.length >= 8 && discussPattern.test(clean.text)));
-    if (discussion) state.discussUntil = nowMs + 10 * 60000; // 聊到一个话题就连续 10 分钟算讨论
+    // 只按本条请求判断，旧存档的讨论窗口不能把短句闲聊永久续成详细回答。
+    const discussion = Boolean(clean.text && clean.text.length >= 8 && discussPattern.test(clean.text));
+    state.discussUntil = 0;
     msg.discussion = discussion;
 
     // 6) 组装提示词：只加载「当前 chat + 当前说话人」的卡，绝不跨聊天取。
