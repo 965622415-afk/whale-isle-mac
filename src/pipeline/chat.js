@@ -1983,7 +1983,10 @@ class Bot {
         ? persona.kaomojiPick(this.rng)
         : ['🐋', '🥺', '😭', '✨', '💧', '🫧', '🍚'][Math.floor(this.rng() * 7)];
     }
-    if (extra) {
+    // 表情在正文截断后追加，必须连同合并时的空格一起占用整轮字数。
+    const extraChars = Array.from(extra).length + (bubbles.length >= maxBubbles ? 1 : 0);
+    const replyChars = bubbles.reduce((count, bubble) => count + Array.from(bubble).length, 0);
+    if (extra && replyChars + extraChars <= maxChars) {
       // 遵守 maxBubbles：气泡已经满了就并到最后一条，别偷偷多发一条
       if (bubbles.length < maxBubbles) bubbles.push(extra);
       else if (bubbles.length) bubbles[bubbles.length - 1] = (bubbles[bubbles.length - 1] + ' ' + extra).trim();

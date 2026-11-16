@@ -62,15 +62,48 @@ const groupMsg = (text, extra = {}) => ({
 });
 
 test('讨论和多分句回复仍遵守私聊群聊整轮字数设置', async () => {
-  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, discussionMaxChars: 400, emojiChance: 0 } });
-  config.persona.emojiChance = 0;
+  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, discussionMaxChars: 400, emojiChance: 1 } });
   const { bot, cleanup } = makeBot({ config });
   try {
     for (const [message, limit] of [[privateMsg, 40], [groupMsg, 20]]) {
-      const decision = await bot.decide(message('为什么今天你觉得这么开心'));
+      const decision = await bot.decide(message('为什么今天你觉得这么开心', { atMe: true }));
       decision.msg.discussion = true;
+      bot.rng = () => 0;
       const bubbles = bot.finalize(decision, '这是一段非常长的回答'.repeat(30) + '，' + '还有很多补充解释'.repeat(30));
       assert.ok(Array.from(bubbles.join('')).length <= limit, bubbles.join(''));
+    }
+  } finally { cleanup(); }
+});
+
+test('追加表情按整轮剩余字数决定，完整保留能放下的表情', () => {
+  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, emojiChance: 1 } });
+  const { bot, cleanup } = makeBot({ config });
+  try {
+    for (const chatType of ['private', 'group']) {
+      const limit = chatType === 'group' ? 20 : 40;
+      for (const maxBubbles of [1, 2]) {
+        config.chat.maxBubbles = maxBubbles;
+        for (const discussion of [false, true]) {
+          for (const source of ['kaomoji', 'random-emoji', 'model-emoji']) {
+            for (const size of ['short', 'boundary', 'full']) {
+              let draws = 0;
+              bot.rng = () => source === 'random-emoji' && draws++ === 1 ? 0.75 : 0;
+              const decision = { action: 'reply', key: 'web:' + chatType, msg: { chatType, discussion, text: '原消息' } };
+              const body = size === 'short' ? '好呀' : '答'.repeat(size === 'full' ? limit : limit - 1);
+              const bubbles = bot.finalize(decision, body + (source === 'model-emoji' ? '🐋' : ''));
+              const label = JSON.stringify({ chatType, maxBubbles, discussion, source, size });
+              assert.ok(Array.from(bubbles.join('')).length <= limit, label);
+              assert.ok(bubbles.length <= maxBubbles, label);
+              if (size === 'full' || (size === 'boundary' && (maxBubbles === 1 || source === 'kaomoji'))) {
+                assert.deepEqual(bubbles, [body], label);
+              } else {
+                const extra = source === 'kaomoji' ? '(๑•̀ㅂ•́)و✧' : '🐋';
+                assert.deepEqual(bubbles, maxBubbles === 1 ? [body + ' ' + extra] : [body, extra], label);
+              }
+            }
+          }
+        }
+      }
     }
   } finally { cleanup(); }
 });
