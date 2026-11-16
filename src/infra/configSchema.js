@@ -19,7 +19,7 @@ const { parseBoolean, parseNumber } = require('./configValues');
  * 不改行为：合法值原样通过；非法值只报错，不偷偷改。
  */
 
-const API_KEY_SPEC = Object.freeze({ type: 'string', maxLen: 250, redactValue: true });
+const API_KEY_SPEC = Object.freeze({ type: 'string', maxLen: 250, noWhitespace: true, redactValue: true });
 const FIELDS = {
   // 外部服务自行决定凭据格式，本地路由的短 Key 也应合法。
   'deepseek.apiKey': API_KEY_SPEC,
@@ -249,6 +249,8 @@ function checkValue(value, spec) {
   if (spec.type === 'string') {
     if (typeof value !== 'string') return `应该是字符串，实际是 ${shownValue(value, spec)}`;
     if (spec.pattern && !spec.pattern.test(value)) return '格式不对';
+    // Key 这类透传凭据不该夹空白：粘贴时带上的换行/空格会让请求头直接失效。
+    if (spec.noWhitespace && /\s/.test(value)) return `不能包含空格或换行`;
     if (spec.maxLen && value.length > spec.maxLen) return `太长（最多 ${spec.maxLen} 个字符）`;
     return null;
   }

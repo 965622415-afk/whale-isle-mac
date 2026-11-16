@@ -28,6 +28,8 @@ test('自定义聊天和看图 Key 接受短值，最多 250 字符，拒绝超�
       assert.equal(saved[field], 'k'.repeat(250), '拒绝时保留旧值，不截断新值');
     }
     assert.equal((await post({ apiKey: '' })).status, 200, '保留无 Key 本地服务的支持');
+    // 粘贴时带进的空格/换行仍要拒绝：那会让请求头失效，但跟最小长度无关。
+    assert.equal((await post({ apiKey: 'bad key with spaces' })).status, 400, '不能包含空格');
     for (const field of ['deepseek.apiKey', 'vision.apiKey', 'voice.apiKey', 'websearch.deepseek.apiKey', 'websearch.zhihu.accessSecret']) {
       for (const length of [1, 6, 250, 251]) {
         const response = await fetch(app.url + '/api/config', {
