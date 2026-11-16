@@ -5,6 +5,7 @@ const weather = require('../adapters/search/weather');
 const router = require('../adapters/searchRouter');
 const apiSearch = require('../adapters/search/apiSearch');
 const policy = require('../core/search/policy');
+const { resolveSearchConfig } = require('../infra/config');
 const { effectiveMaxAgeDays } = require('../core/search/quality');
 const { result, formatResult } = require('../core/search/result');
 const { remaining, errorInfo, report, searchError } = require('../adapters/search/transport');
@@ -34,6 +35,7 @@ function mergeResults(local, api, limit = 4) {
 
 /** 单轮搜索的唯一入口；只返回证据，不读写会话存储或决定聊天回复。 */
 async function search({ text = '', history = [], llm, config = {}, now = new Date(), timeZone = '', signal, trace, force = false, dataDir = 'data' } = {}, deps = {}) {
+  if (llm?.config && config.api?.followChat === true) config = resolveSearchConfig({ ...llm.config, websearch: config });
   const providers = deps.providers || web;
   const places = deps.places || weather;
   const routeSearch = deps.route || router.route;
@@ -138,9 +140,12 @@ async function search({ text = '', history = [], llm, config = {}, now = new Dat
       && Array.isArray(config.api.providers) && config.api.providers.length > 0;
     let api = null;
     if (apiOn) {
+      // 自动服务可能较慢，给本地兜底保留预算，避免 API 一次耗尽整轮搜索时间。
+      const apiDeadline = config.api.followChat === true
+        ? Math.min(deadline, Date.now() + Math.floor(options().timeoutMs * 0.6)) : deadline;
       api = await apiSearch.apiSearch({
         query: q, text, websearch: config, dataDir,
-        deadline, signal: controller.signal, timeoutMs: options().timeoutMs, trace: say,
+        deadline: apiDeadline, signal: controller.signal, timeoutMs: Math.max(0, apiDeadline - Date.now()), trace: say,
       }).catch((err) => {
         const info = errorInfo(err);
         say('api_failed', info);

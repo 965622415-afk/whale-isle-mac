@@ -102,7 +102,7 @@ def runtime_snapshot(config, environ=None):
         'STICKER_TEST_ON': as_bool(features.get('stickers', False), False),
         'STICKER_COLLECT': as_bool(sticker.get('collectReceived', False), False),
         'MASTER_WXID': wxids[0] if wxids else '',
-        'VOICE_ENABLED': as_bool(voice.get('enabled', False), False),
+        'VOICE_ENABLED': as_bool(voice.get('enabled', True), True),
         'VOICE_PROVIDER': voice_provider,
         'VOICE_BASE_URL': str(voice.get('baseUrl') or 'https://api.deepseek.com/v1/tools/asr'),
         'VOICE_MODEL': voice_model,

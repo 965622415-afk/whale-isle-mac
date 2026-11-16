@@ -506,11 +506,18 @@ class ReceiverMixin:
 
     def transcribe_voice(self, msg):
         """语音消息 → 文字；失败返回空串。"""
-        if not G.VOICE_ENABLED:
+        # 使用本条消息的完整快照，防止并行识别时切换服务商混用地址和 Key。
+        voice = G.voice_runtime() if callable(getattr(G, 'voice_runtime', None)) else {
+            name: getattr(G, name) for name in ('VOICE_ENABLED', 'VOICE_API_KEY', 'VOICE_MODEL',
+                'VOICE_BASE_URL', 'VOICE_TIMEOUT', 'VOICE_MAX_SECONDS')}
+        if not voice['VOICE_ENABLED']:
             G.log('语音识别已关闭（voice.enabled=false）')
             return ''
-        if not G.VOICE_API_KEY:
-            G.log_throttled('voice-key-missing', '语音识别未配置对应服务商的 Key，请在启动器「看图与语音」中填写语音 Key')
+        if voice.get('VOICE_SUPPORTED') is False:
+            G.log_throttled('voice-provider-unsupported', '当前聊天接口尚未适配语音识别，请在设置 → API 接入 → 语音（识别）手动选择服务')
+            return ''
+        if not voice['VOICE_API_KEY']:
+            G.log_throttled('voice-key-missing', '语音识别缺少对应服务商的 Key，请在设置 → API 接入配置聊天 Key 或语音专用 Key')
             return ''
         try:
             import io
@@ -538,8 +545,8 @@ class ReceiverMixin:
             if seconds < 0.3:
                 G.log('语音太短（%.1fs），跳过' % seconds)
                 return ''
-            if seconds > G.VOICE_MAX_SECONDS:
-                G.log('语音太长（%.0fs > %.0fs），跳过' % (seconds, G.VOICE_MAX_SECONDS))
+            if seconds > voice['VOICE_MAX_SECONDS']:
+                G.log('语音太长（%.0fs > %.0fs），跳过' % (seconds, voice['VOICE_MAX_SECONDS']))
                 return ''
             wav_path = G.os.path.splitext(path)[0] + '.wav'
             try:
@@ -549,7 +556,7 @@ class ReceiverMixin:
                     w.setframerate(G.VOICE_SAMPLE_RATE)
                     w.writeframes(raw)
                 with open(wav_path, 'rb') as f:
-                    text = G.asr_transcribe(f.read(), G.VOICE_API_KEY, G.VOICE_MODEL, G.VOICE_BASE_URL, G.VOICE_TIMEOUT, G.VOICE_PROVIDER)
+                    text = G.asr_transcribe(f.read(), voice['VOICE_API_KEY'], voice['VOICE_MODEL'], voice['VOICE_BASE_URL'], voice['VOICE_TIMEOUT'], voice.get('VOICE_PROVIDER', G.VOICE_PROVIDER))
             finally:
                 try:
                     G.os.remove(wav_path)

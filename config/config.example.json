@@ -159,8 +159,9 @@
     "city": "",
     "timeoutMs": 8000,
     "api": {
-      "_说明": "搜索 API 总开关；关闭时不调用任何第三方搜索 API。开启后 providers 里放 deepseek / zhihu。",
-      "enabled": false,
+      "_说明": "默认跟随聊天模型和 Key；已适配 DeepSeek / 千问官方搜索，其他服务使用本地 Bing/360。关闭总开关不调用搜索 API；关闭 followChat 后可手动添加 deepseek / zhihu。",
+      "enabled": true,
+      "followChat": true,
       "providers": []
     },
     "deepseek": {
@@ -200,9 +201,9 @@
     "timeoutMs": 30000
   },
   "voice": {
-    "_说明": "语音消息转文字。provider=auto 时按接口地址判断：含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。DeepSeek 不需要模型名，最长 120 秒。apiKey 留空则用同源服务商的 Key。enabled=false 时不下载、不请求。",
-    "enabled": false,
-    "provider": "dashscope",
+    "_说明": "语音消息转文字。默认启用、provider=follow 跟随聊天服务和 Key（已适配 DeepSeek、千问官方接口）；手动配置和关闭状态继续保留。provider=auto 时按接口地址判断：含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。DeepSeek 不需要模型名，最长 120 秒。apiKey 留空则用同源服务商的 Key。enabled=false 时不下载、不请求。",
+    "enabled": true,
+    "provider": "follow",
     "apiKey": "",
     "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
     "model": "qwen3-asr-flash",

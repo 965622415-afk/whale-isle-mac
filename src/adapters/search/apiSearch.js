@@ -8,9 +8,10 @@ const { result } = require('../../core/search/result');
 const { remaining, errorInfo, report } = require('./transport');
 const deepseek = require('./deepseek');
 const zhihu = require('./zhihu');
+const qwen = require('./qwen');
 const quota = require('./quota');
 
-const KNOWN = new Set(['deepseek', 'zhihu']);
+const KNOWN = new Set(['deepseek', 'zhihu', 'qwen']);
 
 function cleanProviders(value) {
   const list = Array.isArray(value) ? value : [];
@@ -29,6 +30,11 @@ async function runOne(provider, { query, text, websearch, dataDir, options, time
     const apiKey = String(websearch?.deepseek?.apiKey || '').trim();
     if (!apiKey) return { ...base, status: 'failed', code: 'deepseek_key_missing' };
     const items = await deepseek.search(query, { ...options, timeoutMs, apiKey, oriQuestion: text, count: 10 });
+    return { ...base, items, elapsedMs: Date.now() - started };
+  }
+  if (provider === 'qwen') {
+    const cfg = websearch.qwen || {};
+    const items = await qwen.search(query, { ...options, ...cfg, timeoutMs });
     return { ...base, items, elapsedMs: Date.now() - started };
   }
   if (provider === 'zhihu') {

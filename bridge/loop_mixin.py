@@ -323,6 +323,7 @@ class LoopMixin:
         misses = 0
         gate_logged = False
         hb_misses = 0
+        background_uia_paused = False
         while True:
             try:
                 resting = False
@@ -332,13 +333,16 @@ class LoopMixin:
                 elif not resting and G.SEND_STATE.get('active'):
                     G.log('心跳跳过预热（正在发送中）')
                     uia_now = self.UIA_CACHE.get('u') is not None
+                elif background_uia_paused:
+                    # 只停止心跳线程的自动探测；实际发送仍执行原有账号校验及恢复。
+                    uia_now = self.UIA_CACHE.get('u') is not None
                 elif not resting:
                     try:
                         if not self.selected_window_ready() or not self.wechat_window_alive():
                             with self.gui_lock:
                                 self.gui = None
                                 self.UIA_CACHE['u'] = None
-                            misses = 0
+                            misses += 1
                             uia_now = False
                             if not gate_logged:
                                 G.log_warn('[!] 等待微信主窗可用，请打开已选账号的主窗口')
@@ -359,6 +363,7 @@ class LoopMixin:
                                 if _u is None:
                                     misses += 1
                                 if _u is None and misses >= 3:
+                                    background_uia_paused = True
                                     G.log_warn('[!] UIA 连续 %d 次拿不到，重建窗口驱动再试…' % misses)
                                     with self.gui_lock:
                                         self.gui = self.new_window_driver()
@@ -371,7 +376,11 @@ class LoopMixin:
                             self.UIA_CACHE['u'] = _u
                             uia_now = _u is not None
                     except Exception:
+                        misses += 1
                         uia_now = self.UIA_CACHE.get('u') is not None
+                    if background_uia_paused or misses >= 3:
+                        background_uia_paused = True
+                        G.log_warn('[!] UIA 后台检查连续失败，已暂停后台预热和重建，避免反复触碰微信；实际发送仍按原流程检查，重连桥接后恢复后台检查')
                 payload = {'platform': 'wechat', 'uia': uia_now, 'rest': resting, 'listener': self.listener_alive(), 'ffmpeg': self.ffmpeg_available(), 'account': self.db.account, 'account_wxid': self.db.wxid, 'account_nick': self._self_nick, 'account_ok': bool(self.ACCOUNT.get('verified')), 'account_why': str(self.ACCOUNT.get('why') or ''), 'account_guard': bool(G.ACCOUNT_GUARD), 'window': self.wechat_window_state()}
                 headers = {'x-whale-bridge': '1'}
                 if self.token:

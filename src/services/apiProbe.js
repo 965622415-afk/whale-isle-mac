@@ -1,15 +1,17 @@
 'use strict';
 
-const { loadSettings } = require('../infra/config');
+const { loadSettings, resolveVoiceConfig, resolveSearchConfig } = require('../infra/config');
 const deepseek = require('../adapters/search/deepseek');
 const zhihu = require('../adapters/search/zhihu');
 
 function voiceKey(config, url) {
+  if ((config.voice?.provider || 'auto') === 'follow') return resolveVoiceConfig(config).apiKey || '';
   const s = loadSettings(config);
   if (config.voice?.apiKey) return config.voice.apiKey;
   if (s.voiceApiKey || s.keys?.voice) return s.voiceApiKey || s.keys.voice;
   const origin = value => { try { return new URL(value).origin; } catch { return ''; } };
-  const host = new URL(url).hostname;
+  let host;
+  try { host = new URL(url).hostname; } catch { return ''; }
   if (['dashscope.aliyuncs.com', 'dashscope-intl.aliyuncs.com'].includes(host) && s.keys?.qwen) return s.keys.qwen;
   if (origin(url) === origin(s.baseUrl) && s.apiKey) return s.apiKey;
   if (origin(url) === origin(config.deepseek?.baseUrl || 'https://api.deepseek.com')) return config.deepseek?.apiKey || '';
@@ -19,7 +21,7 @@ function voiceKey(config, url) {
 async function probe(config, body = {}, deps = {}) {
   const provider = body.provider;
   if (provider === 'deepseek' || provider === 'zhihu') {
-    const cfg = config.websearch || {};
+    const cfg = resolveSearchConfig(config);
     const key = provider === 'zhihu' ? cfg.zhihu?.accessSecret : cfg.deepseek?.apiKey;
     if (!key) throw new Error('请先保存该搜索 API 的 Key / Secret');
     const adapter = deps[provider] || (provider === 'zhihu' ? zhihu : deepseek);
@@ -32,10 +34,11 @@ async function probe(config, body = {}, deps = {}) {
   if (!audio || audio.length > 3 * 1024 * 1024 || !/^[A-Za-z0-9+/=\r\n]+$/.test(audio)) throw new Error('请选择不超过 2 MiB 的 WAV 测试音频');
   const bytes = Buffer.from(audio, 'base64');
   if (bytes.length > 2 * 1024 * 1024 || bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') throw new Error('测试文件必须是 WAV 音频');
-  const v = config.voice || {};
+  const v = resolveVoiceConfig(config);
+  if (v.supported === false) throw new Error(v.hint);
   const url = new URL(v.baseUrl);
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('语音接口地址无效');
-  const key = voiceKey(config, url.href);
+  const key = v.auto ? v.apiKey : voiceKey(config, url.href);
   if (!key) throw new Error('没有可用的语音识别 Key');
   const mode = v.provider || 'auto';
   const multipart = mode === 'deepseek' || (mode === 'auto' && (url.hostname === 'api.deepseek.com' || url.hostname.endsWith('.deepseek.com') || url.pathname.replace(/\/$/, '').endsWith('/v1/tools/asr')));

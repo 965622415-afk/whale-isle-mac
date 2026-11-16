@@ -10,6 +10,7 @@ const { EventEmitter } = require('node:events');
 
 const deepseek = require('../src/adapters/search/deepseek');
 const zhihu = require('../src/adapters/search/zhihu');
+const qwen = require('../src/adapters/search/qwen');
 const { apiSearch } = require('../src/adapters/search/apiSearch');
 const quota = require('../src/adapters/search/quota');
 const { loadConfig } = require('../src/infra/config');
@@ -64,6 +65,28 @@ function fakeGet(t, handler) {
   });
   return calls;
 }
+
+test('千问搜索使用原生来源列表，不能把生成正文中的链接当搜索证据', async t => {
+  let valid = true;
+  const calls = fakePost(t, () => ({ body: { output: {
+    choices: [{ message: { content: '模型自己生成的 https://invented.example/' } }],
+    ...(valid ? { search_info: { search_results: [
+      { title: '来源标题', url: 'https://source.example/news', site_name: '测试来源' },
+      { title: '非法链接', url: 'javascript:alert(1)' },
+    ] } } : {}),
+  } } }));
+  const opts = { apiKey: 'unit-qwen', model: 'qwen3.7-plus', baseUrl: 'https://dashscope.aliyuncs.com', timeoutMs: 1000 };
+  const rows = await qwen.search('测试搜索', opts);
+  assert.equal(rows.length, 1); assert.equal(rows[0].url, 'https://source.example/news');
+  const body = JSON.parse(calls[0].body);
+  assert.equal(body.model, opts.model);
+  assert.equal(body.parameters.enable_search, true); assert.equal(body.parameters.search_options.enable_source, true);
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer unit-qwen');
+  assert.equal(calls[0].url, 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation');
+  assert.deepEqual(body.input.messages[0].content, [{ text: '测试搜索' }]);
+  valid = false;
+  await assert.rejects(qwen.search('测试', opts), err => err.code === 'invalid_response');
+});
 
 test('DeepSeek 搜索：POST 到 /v1/tools/search，带 query/ori_question 并映射结果', async (t) => {
   const calls = fakePost(t, () => ({

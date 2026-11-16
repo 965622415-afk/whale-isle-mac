@@ -1,12 +1,23 @@
 'use strict';
 
-const { loadSettings, saveSettings, resolveRuntime, resolveVisionConfig, maskKey, PROVIDERS, isLocalUrl, normalizeBaseUrl } = require('../infra/config');
+const { loadSettings, saveSettings, resolveRuntime, resolveVisionConfig, resolveVoiceConfig, resolveSearchConfig, maskKey, PROVIDERS, isLocalUrl, normalizeBaseUrl } = require('../infra/config');
 const { applyConfigPatch } = require('../infra/configPatch');
 const vision = require('../adapters/vision');
 const { statusPayload } = require('./status');
 const { describeError } = require('../infra/errors');
 const { tagName } = require('../infra/privacy');
 const { API_KEY_SPEC, checkValue } = require('../infra/configSchema');
+
+function followStatus(config) {
+  const v = resolveVoiceConfig(config);
+  const w = resolveSearchConfig(config);
+  return {
+    voice: { enabled: v.enabled, auto: v.auto, supported: v.supported, provider: v.provider,
+      model: v.model, baseUrl: v.baseUrl, hint: v.hint || '手动语音服务：使用已保存的语音配置。',
+      hasKey: v.auto ? Boolean(v.apiKey) : Boolean(require('./apiProbe').voiceKey(config, v.baseUrl)) },
+    search: { auto: w.api?.followChat === true, hint: w.followHint || '使用手动添加的搜索 API；搜索判定沿用聊天模型。' },
+  };
+}
 
 function getSettings(runtime) {
   const { config, llm } = runtime;
@@ -43,6 +54,7 @@ function getSettings(runtime) {
     userName: String(saved.userName || config.persona.ownerName || ''),
     // 看图（视觉）状态：设置接口里要能看出「填没填、填的是哪把」
     vision: vision.status(config),
+    ...followStatus(config),
     providers,
     group: {
       requireAt: config.group.requireAt,
@@ -327,6 +339,7 @@ async function applySettings(runtime, body) {
       userName: String(config.persona.ownerName || '主人'),
       // 保存后前端立刻能把「看图 Key 已存」显示出来
       vision: vision.status(config),
+      ...followStatus(config),
     },
   };
 }

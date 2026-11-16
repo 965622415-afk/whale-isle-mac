@@ -146,9 +146,10 @@ class ConfigSnapshotTests(unittest.TestCase):
         scope = dict(self.parser.runtime_snapshot(config)['values'])
         scope.update(bridge_config=self.parser, BASE_SYSTEM_SENDERS={'fixture-system'},
             CONFIG_SNAPSHOT=self.parser.runtime_snapshot(config), CURRENT_CONFIG=config,
-            _resolve_voice_key=Mock(return_value='fixture-key'), set_system_senders=Mock(),
+            resolve_voice_config=Mock(side_effect=load_pure_module('voice').resolve_voice_config), set_system_senders=Mock(),
             bridge_log=SimpleNamespace(set_level=Mock()), ROOT='fixture-root',
             log=Mock(), restart_for_config_change=Mock())
+        load_function('bridge/engine.py', 'voice_runtime', scope)
         load_function('bridge/engine.py', '_publish_runtime_config', scope)
         load_function('bridge/engine.py', 'reload_config', scope)
         return scope
@@ -172,7 +173,7 @@ class ConfigSnapshotTests(unittest.TestCase):
         self.assertTrue(scope['reload_config'](config={}))
         self.assertEqual(scope['STALE_AFTER'], 120)
         self.assertEqual(scope['VOICE_MODEL'], '')
-        self.assertFalse(scope['VOICE_ENABLED'])
+        self.assertTrue(scope['VOICE_ENABLED'])
         self.assertEqual(scope['MASTER_WXID'], '')
 
     def test_invalid_shape_does_not_partially_publish(self):
@@ -181,7 +182,7 @@ class ConfigSnapshotTests(unittest.TestCase):
         self.assertFalse(scope['reload_config'](config={'wechat': 'fixture-invalid-section'}))
         self.assertIs(scope['CURRENT_CONFIG'], before)
         self.assertTrue(scope['QUOTE_REPLY'])
-        scope['_resolve_voice_key'].assert_not_called()
+        scope['resolve_voice_config'].assert_not_called()
 
     def test_worker_environment_override_is_preserved_on_reload(self):
         with patch.dict('os.environ', {'WHALE_PIPELINE_WORKERS': '3'}):
