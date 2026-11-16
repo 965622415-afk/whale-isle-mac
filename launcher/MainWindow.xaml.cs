@@ -59,6 +59,7 @@ namespace WhaleLauncher
 
             var dir = AppContext.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
             _sup = new RuntimeSupervisor(dir);
+            _sup.UpdateBlocked = true;
             _pluginMarket = new PluginMarket(dir);
 
             // 正式版不该显示成 v4.0-alpha：那会让用户以为自己装的是测试版，
@@ -86,7 +87,7 @@ namespace WhaleLauncher
             Loaded += async (_, __) =>
             {
                 Nav.SelectedIndex = 0;
-                _ = SilentUpdateCheckAsync();
+                await SilentUpdateCheckAsync(allowBlocking: true);
                 await RefreshAsync();
             };
             Closing += OnClosingDuringUpdate;
@@ -136,7 +137,7 @@ namespace WhaleLauncher
 
         private void OnToastUpdateClick(object sender, RoutedEventArgs e)
         {
-            if (_lastManifest != null && _lastManifest.HasUpdate) _ = RunUpdateAsync(_lastManifest, askFirst: true);
+            if (_lastManifest != null && _lastManifest.HasUpdate) ApplyManifestPolicy(_lastManifest, interactive: true);
             else OnCheckUpdate(sender, null);
             e.Handled = true;
         }
@@ -214,7 +215,7 @@ namespace WhaleLauncher
         /// 拿清单结果决定界面形态。这里只做「提示 / 强制 / 禁止启动」的判定，
         /// 不下载；真下载交给 UpdateService 下载官方安装包。
         /// </summary>
-        private async Task SilentUpdateCheckAsync()
+        private async Task SilentUpdateCheckAsync(bool allowBlocking = false)
         {
             if (_updating || _checkingUpdates) return;
             _checkingUpdates = true;
@@ -222,7 +223,7 @@ namespace WhaleLauncher
             try
             {
                 var chk = await UpdateManifestService.FetchAsync(_sup.BaseDir);
-                ApplyManifestPolicy(chk, false, allowBlocking: false);
+                ApplyManifestPolicy(chk, false, allowBlocking);
             }
             finally { _checkingUpdates = false; }
         }
@@ -241,6 +242,7 @@ namespace WhaleLauncher
 
         private void ApplyManifestPolicy(ManifestCheck chk, bool interactive, bool allowBlocking = true)
         {
+            if (allowBlocking) _sup.UpdateBlocked = chk.Policy == UpdatePolicy.Force || chk.Policy == UpdatePolicy.Kill;
             switch (chk.Policy)
             {
                 case UpdatePolicy.Kill:

@@ -6,7 +6,7 @@
  * 更新只由启动器的「检查更新」下载官方安装包：
  *   · 安装包资产来自 Release 的 whale-girl-*-setup.exe 和 SHA256SUMS.txt；
  *   · 不再保留源码版 update.ps1 分支；
- *   · Release 里没有 release-manifest.json，客户端靠 raw 分支兜底。
+ *   · Release 同时包含安装包、SHA256SUMS.txt 与候选更新清单。
  *
  * 这里只读文件、不联网：更新落地方式或资产名一改错，测试直接红。
  */
@@ -111,7 +111,9 @@ test('发版步骤会写 latest / released_at / manifest_version', () => {
     // force_after_hours 由仓库里的清单原样带过去（只读不改）
     assert.ok(block.includes(needle) || read('release-manifest.json').includes('force_after_hours'), `发版步骤没有处理 ${needle}`);
   }
-  assert.ok(block.includes('$manifest.manifest_version = [int]$manifest.manifest_version + 1'), 'manifest_version 没有递增');
+  assert.ok(block.includes("./scripts/make-manifest.ps1 -Version $env:version -OutFile $manifestPath -TemplateFile 'release-manifest.json'"), 'CI 必须只写候选清单');
+  assert.ok(read('scripts/make-manifest.ps1').includes('$policy.manifest_version = $oldVer + 1'), 'manifest_version 没有递增');
+  assert.doesNotMatch(block, /\$manifest\.manifest_version\s*=/, 'CI 不能重复分配序号');
 });
 
 test('更新浮层先显示摘要，展开才显示另存的详细说明', () => {
@@ -136,7 +138,7 @@ test('可选桥接更新在浮层及确认框用红字显示版本限定警告',
 });
 
 test('release-manifest.json 的字段与 UpdateManifest.Parse 一一对应', () => {
-  const fields = ['latest', 'released_at', 'force_after_hours', 'force', 'force_from', 'kill_below', 'message', 'manifest_version'];
+  const fields = ['latest', 'released_at', 'force_after_hours', 'force', 'force_from', 'force_versions', 'kill_below', 'message', 'manifest_version'];
   for (const f of fields) {
     assert.ok(Object.prototype.hasOwnProperty.call(manifest, f), `release-manifest.json 缺字段 ${f}`);
     assert.ok(manifestCode.includes(`"${f}"`), `UpdateManifest.cs 没有解析 ${f}`);
