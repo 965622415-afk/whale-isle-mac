@@ -23,6 +23,31 @@ const launcher = path.join(root, 'launcher');
 const read = (rel) => fs.readFileSync(path.join(root, rel), 'utf8').replace(/^\uFEFF/, '');
 const readLauncher = (rel) => fs.readFileSync(path.join(launcher, rel), 'utf8').replace(/^\uFEFF/, '');
 
+test('统一提示、确认、输入和文本弹层不创建独立窗口', () => {
+  const dialog = readLauncher('AppDialog.cs');
+  assert.doesNotMatch(dialog, /new\s+Window\s*\{|\.ShowDialog\s*\(/);
+  assert.match(dialog, /root\.Children\.Add\(overlay\)/);
+  assert.match(dialog, /root\.Children\.Remove\(overlay\)/);
+  assert.match(dialog, /window\.Closed\s*\+=/);
+  assert.match(dialog, /new BlurEffect/);
+  assert.match(dialog, /SetCurrentValue\(UIElement\.IsEnabledProperty, false\)/);
+  assert.match(dialog, /KeyboardNavigationMode\.Cycle/);
+  assert.match(dialog, /Keyboard\.FocusedElement == input/);
+  assert.match(dialog, /SetName\(close, "关闭弹窗"\)/);
+  for (const file of ['Views/SettingsPage.xaml.cs', 'Views/StickerPage.xaml.cs',
+    'Views/PersonaPage.xaml.cs', 'Views/PluginMarketPage.xaml.cs', 'Views/DiagPage.xaml.cs',
+    'Views/BridgePage.xaml.cs', 'Views/ReminderPage.xaml.cs', 'ColorPickerWindow.cs']) {
+    assert.doesNotMatch(readLauncher(file), /ShowDialog\s*\(|new\s+(?:Microsoft\.Win32\.)?(?:OpenFileDialog|SaveFileDialog|Window)\b|:\s*Window\b/, file);
+  }
+  assert.match(readLauncher('AppFilePicker.cs'), /确认覆盖/);
+  const picker = readLauncher('AppFilePicker.cs');
+  assert.match(picker, /if \(!save\) name\.Clear\(\)/);
+  assert.match(picker, /path\.PreviewKeyDown/);
+  assert.match(picker, /Directory\.Exists\(file\)/);
+  assert.match(dialog, /DockPanel\.SetDock\(header, Dock\.Top\)/);
+  assert.match(dialog, /DockPanel\.SetDock\(row, Dock\.Bottom\)/);
+});
+
 const THEME_KEYS = [
   'Bg', 'BgDeep', 'BgNav', 'BgTop', 'CardBg', 'CardBorder', 'Line', 'LineSoft',
   'Text', 'Text2', 'Muted', 'Dim', 'Accent', 'AccentDim', 'AccentSoft',
@@ -34,6 +59,18 @@ const THEME_KEYS = [
 const appXaml = readLauncher('App.xaml');
 const appearance = readLauncher('Appearance.cs');
 const resources = new Set([...appXaml.matchAll(/x:Key="([^"]+)"/g)].map((m) => m[1]));
+
+test('人设读取不覆盖编辑、失败或并发保存；普通滑块保护待保存值', () => {
+  const persona = readLauncher('Views/PersonaPage.xaml.cs');
+  const settings = readLauncher('Views/SettingsPage.xaml.cs');
+  assert.match(persona, /field\.TextChanged \+= OnPersonaTextChanged/);
+  assert.match(persona, /_savedRevision != _editRevision/);
+  assert.match(persona, /revision != _editRevision/);
+  assert.match(persona, /if \(_loadInProgress\) return/);
+  assert.match(persona, /状态定时器每两秒调用此方法，不能反复回填表单/);
+  assert.doesNotMatch(persona, /if \(_locked\) _saveTimer\.Stop\(\)/);
+  assert.match(settings, /if \(sliderPending\) return/);
+});
 
 test('App.xaml 里定义了全部主题画刷', () => {
   for (const key of THEME_KEYS) {

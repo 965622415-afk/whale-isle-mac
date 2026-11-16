@@ -37,6 +37,7 @@
                             <Button Content="仅分享提示词" Style="{StaticResource Ghost}" Click="OnExportPrompt" Margin="0,0,8,8" />
                             <Button x:Name="BtnCopyPreset" Content="复制为自建预设" Style="{StaticResource Ghost}" Click="OnCopyPreset" Visibility="Collapsed" Margin="0,0,8,8" />
                             <Button x:Name="BtnUpdatePreset" Content="更新此预设" Style="{StaticResource Ghost}" Click="OnUpdatePreset" Margin="0,0,8,8" />
+                            <Button x:Name="BtnResetMarket" Content="恢复作者版本" Style="{StaticResource Ghost}" Click="OnResetMarket" Margin="0,0,8,8" />
                             <Button x:Name="BtnRenamePreset" Content="重命名" Style="{StaticResource Ghost}" Click="OnRenamePreset" Margin="0,0,8,8" />
                             <Button x:Name="BtnDeletePreset" Content="删除预设" Style="{StaticResource Ghost}" Click="OnDeletePreset" Margin="0,0,8,8" />
                             <TextBlock x:Name="PresetSaved" Style="{StaticResource Small}" VerticalAlignment="Center" />

@@ -6,6 +6,7 @@ const vision = require('../adapters/vision');
 const { statusPayload } = require('./status');
 const { describeError } = require('../infra/errors');
 const { tagName } = require('../infra/privacy');
+const { API_KEY_SPEC, checkValue } = require('../infra/configSchema');
 
 function getSettings(runtime) {
   const { config, llm } = runtime;
@@ -207,9 +208,8 @@ async function applySettings(runtime, body) {
   }
   if (typeof body.apiKey === 'string') {
     const key = body.apiKey.trim();
-    if (key && (/\s/.test(key) || key.length < 8 || key.length > 300)) {
-      throw new Error('API Key 看起来不太对：不能有空格，长度 8~300');
-    }
+    const error = checkValue(key, API_KEY_SPEC);
+    if (error) throw new Error('API Key：' + error);
     patch.apiKey = key;
     if (key) patch.mock = false;
   }
@@ -222,9 +222,8 @@ async function applySettings(runtime, body) {
   // 留空表示「不改」；以前设置里没有这个字段，填了也没地方存，于是永远提示未配置
   if (typeof body.visionApiKey === 'string') {
     const vk = body.visionApiKey.trim();
-    if (vk && (/\s/.test(vk) || vk.length < 8 || vk.length > 300)) {
-      throw new Error('看图 API Key 看起来不太对：不能有空格，长度 8~300');
-    }
+    const error = checkValue(vk, API_KEY_SPEC);
+    if (error) throw new Error('看图 API Key：' + error);
     if (vk) patch.visionApiKey = vk;
   }
   // 看图模型：聊天模型本身能看图时自动跟随它（用户手动选过就以手动为准）。

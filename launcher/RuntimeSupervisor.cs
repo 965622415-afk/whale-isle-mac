@@ -129,6 +129,8 @@ namespace WhaleLauncher
         public RuntimeSupervisor(string baseDir)
         {
             BaseDir = baseDir;
+            try { ConfigurationPath.Migrate(baseDir); }
+            catch (Exception) { /* 迁移失败保留原文件，加载器继续兼容旧路径。 */ }
             DataDir = Path.Combine(baseDir, "data");
             RotateLogs();
             LogPath = Path.Combine(DataDir, "launcher.log");

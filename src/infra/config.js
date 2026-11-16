@@ -257,15 +257,15 @@ const DEFAULT_CONFIG = {
   },
 
   vision: { apiKey: '', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.6v-flash', timeoutMs: 30000 },
-  // 语音识别：默认走 DeepSeek（/v1/tools/asr），老配置按 baseUrl 自动判断百炼。
+  // 语音识别默认关闭，启用时默认使用百炼；保留老配置的自动判断。
   // provider=auto 时：地址含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。
   // apiKey 留空则用 settings.json / 同源服务商的 Key。
   voice: {
-    enabled: true,
-    provider: 'auto',
+    enabled: false,
+    provider: 'dashscope',
     apiKey: '',
-    baseUrl: 'https://api.deepseek.com/v1/tools/asr',
-    model: '',
+    baseUrl: 'https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation',
+    model: 'qwen3-asr-flash',
     timeoutMs: 90000,
     maxSeconds: 120,
   },
@@ -440,7 +440,7 @@ function migrateSampling(cfg, log) {
 function loadConfig({ root = projectRoot(), env = process.env, readOnly = false } = {}) {
   const { registerSecrets } = require('./redact');
   registerSecrets(env);
-  const configPath = path.join(root, 'config.json');
+  const configPath = require('./configPath').configPath(root);
   const configExists = fs.existsSync(configPath);
   // 解析失败不能悄悄当成「空配置」：那会让所有默认值顶上来，用户看到的是
   // 「配置全没了」，日志里却一个字都没有（真实事故：手填路径写了单反斜杠，
@@ -520,10 +520,13 @@ function loadConfig({ root = projectRoot(), env = process.env, readOnly = false 
 
 /** 首次运行时生成 config.json，方便用户直接编辑 */
 function ensureConfigFile(root = projectRoot()) {
-  const target = path.join(root, 'config.json');
+  const target = require('./configPath').configPath(root);
   if (fs.existsSync(target)) return target;
   const example = path.join(root, 'config', 'config.example.json');
-  if (fs.existsSync(example)) fs.copyFileSync(example, target);
+  if (fs.existsSync(example)) {
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.copyFileSync(example, target);
+  }
   return target;
 }
 

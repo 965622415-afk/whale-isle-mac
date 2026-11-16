@@ -2,6 +2,26 @@
 
 // 子页面不加载首页叙事脚本，导航与主题在同一个入口维护。
 (() => {
+  const starLinks = [...document.querySelectorAll('.github-button')];
+  if (starLinks.length) {
+    // 静态快照保证断网可读，公开计数失败时不影响导航和下载。
+    fetch('https://api.github.com/repos/Banan1cee/whale_girl', {
+      headers: { Accept: 'application/vnd.github+json' },
+      credentials: 'omit',
+      signal: AbortSignal.timeout(8000),
+    }).then(response => {
+      if (!response.ok) throw new Error('GitHub 计数暂不可用');
+      return response.json();
+    }).then(repository => {
+      if (!Number.isSafeInteger(repository.stargazers_count) || repository.stargazers_count < 0) return;
+      const count = new Intl.NumberFormat('en-US').format(repository.stargazers_count);
+      for (const link of starLinks) {
+        link.querySelector('.github-stars').textContent = `☆ ${count}`;
+        link.setAttribute('aria-label', `GitHub · ${count} Stars`);
+        link.title = `${count} Stars · 刚刚从 GitHub 获取`;
+      }
+    }).catch(() => { /* 网络或限流时保留部署快照，不编造数量。 */ });
+  }
   const root = document.documentElement;
   const themeButton = document.querySelector('#theme-toggle');
   const themeMedia = matchMedia('(prefers-color-scheme: light)');

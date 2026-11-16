@@ -73,11 +73,11 @@ namespace WhaleLauncher.Views
         private async void OnLocal(object sender, RoutedEventArgs e)
         {
             if (_busy) return;
-            var picker = new Microsoft.Win32.OpenFileDialog { Filter = "鲸鲸插件包 (*.zip)|*.zip" };
-            if (picker.ShowDialog() != true) return;
+            var file = AppFilePicker.Open("选择鲸鲸插件包", ".zip");
+            if (file == null) return;
             await WithStatus(async () =>
             {
-                var installed = await Task.Run(() => _market.InstallLocal(picker.FileName,
+                var installed = await Task.Run(() => _market.InstallLocal(file,
                     (info, current) => Dispatcher.Invoke(() => ConfirmLocalInstall(info, current))));
                 if (!installed) return "已取消安装。";
                 _showInstalled = true;
@@ -101,7 +101,7 @@ namespace WhaleLauncher.Views
                         + "\n只有在确认新作者可信时才继续。";
             }
             if (info.IsPersona)
-                details += "\n\n应用人设才会替换当前自定义提示词。停用或卸载后，已应用的提示词仍会保留。";
+                details += "\n\n应用人设会替换包内包含的人设和表达设置。停用或卸载后，已应用的人设仍会保留。";
             return AppDialog.Confirm(Window.GetWindow(this),
                 "此本地 ZIP 未经鲸鲸插件市场审核或签名。请确认你信任文件的提供者。\n\n" + details,
                 "安装本地插件", danger: true, okText: "仍然安装");
@@ -172,7 +172,7 @@ namespace WhaleLauncher.Views
                             return Task.FromResult("已卸载");
                         }, false);
                         var settings = new Button { Content = "设置", Style = (Style)FindResource("Ghost"),
-                            IsEnabled = (enabled || info.IsFlow) && PluginMarket.Compatible(info, _version) };
+                            IsEnabled = (enabled || info.IsFlow) && PluginMarket.Compatible(info, _version, UpdateManifestService.LocalEpoch(_sup.BaseDir)) };
                         settings.Click += async (_, _) =>
                         {
                             if (info.IsFlow) ShowMessageSettings(info);
@@ -181,7 +181,7 @@ namespace WhaleLauncher.Views
                         };
                         buttons.Children.Add(settings);
                     }
-                    else if (!PluginMarket.Compatible(info, _version))
+                    else if (!PluginMarket.Compatible(info, _version, UpdateManifestService.LocalEpoch(_sup.BaseDir)))
                         body.Children.Add(Small("此版本与你的鲸鲸不兼容"));
                     else if (current != null && !PluginMarket.SameAuthor(current.Author, info.Author))
                         body.Children.Add(Small("作者与已安装版本不一致，请先卸载旧版本再安装"));

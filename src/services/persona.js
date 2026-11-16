@@ -8,6 +8,7 @@ const { LIMITS } = require('../memory/constants');
 const { describeError } = require('../infra/errors');
 const { identityPatch } = require('../persona/profile');
 const { portableFields } = require('../persona/portable');
+const { legacyPatch } = require('../persona/legacy');
 
 /* ---------------- 人设调教（/api/persona 用） ---------------- */
 
@@ -18,6 +19,7 @@ async function applyPersonaPatch(runtime, body) {
     return { ok: true, persona: personaStore.summary(runtime.config) };
   }
   const patch = identityPatch(body);
+  Object.assign(patch, legacyPatch(body, runtime.config.persona.customPrompt || ''));
   const portable = portableFields(body);
   for (const key of ['ownerName', 'aliases', 'masterRoast', 'proactive', 'opinions', 'emojiChance', 'maxBubbles', 'discussionMaxChars']) {
     if (Object.hasOwn(portable, key)) patch[key] = portable[key];

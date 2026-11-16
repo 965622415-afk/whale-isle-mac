@@ -31,7 +31,9 @@ test('UpdateService：更新只下载安装包，不再依赖源码版脚本', (
   assert.equal(fs.existsSync(path.join(root, 'scripts/update.ps1')), false, 'scripts/update.ps1 应该已经删除');
 });
 
-test('UpdateService：从 releases/latest/download 取安装包和校验清单', () => {
+test('UpdateService：安装包和校验清单固定到目标版本标签', () => {
+  assert.ok(service.includes('"/releases/download/v" + latest'), '必须固定目标标签，不能跟随 latest 切换');
+  assert.ok(service.includes('FetchSumsAsync(name, assetBases)'), '哈希必须与包使用相同的目标源');
   assert.ok(service.includes('releases/latest/download'), '没有走 releases/latest/download');
   assert.ok(service.includes('SHA256SUMS.txt'), '没有下载 SHA256SUMS.txt');
   assert.ok(service.includes('Banan1cee/whale_girl'), '仓库地址不对');
@@ -40,6 +42,8 @@ test('UpdateService：从 releases/latest/download 取安装包和校验清单',
 });
 
 test('UpdateService：静默安装参数是 /SILENT，带 /CLOSEAPPLICATIONS', () => {
+  assert.ok(service.includes('/DIR='), '更新必须安装回当前目录，不能依赖注册表旧路径');
+  assert.ok(service.includes('$result.ExitCode'), '安装失败不能当成功重启');
   assert.ok(service.includes("'/SILENT'"), '安装参数不是 /SILENT（/VERYSILENT 会让用户看不到进度）');
   assert.ok(!service.includes("'/VERYSILENT'"), '用了 /VERYSILENT，用户看不到安装进度');
   assert.ok(service.includes('/CLOSEAPPLICATIONS'), '没有 /CLOSEAPPLICATIONS，启动器自己占着 exe 会装不上');
@@ -165,7 +169,7 @@ test('UpdateService：资产（安装包 / 校验清单）有镜像回退，直�
 });
 
 test('UpdateService：校验清单多源并行，哈希对不上就中止而不是挑一个用', () => {
-  assert.match(service, /Task\.WhenAll\(AssetBases\.Select/, '校验清单没有多源并行拉取');
+  assert.match(service, /Task\.WhenAll\(assetBases\.Select/, '校验清单没有多源并行拉取');
   assert.match(service, /不一致，已中止/, '多个源的哈希冲突时没有中止（会装到被篡改的包）');
   assert.match(service, /hash\.Length == 64/, '没有校验哈希格式，镜像的错误页会被当成哈希');
 });
@@ -184,7 +188,7 @@ test('UpdateService：安装包最多 32 段并发，服务端不支持 Range �
 });
 
 test('UpdateService：单个源失败不影响整体——换源，并把每个源的原因汇总报出来', () => {
-  assert.match(service, /foreach \(var baseUrl in AssetBases\)/, '没有逐源尝试');
+  assert.match(service, /foreach \(var baseUrl in assetBases\)/, '没有逐源尝试');
   assert.match(service, /tried\.Add\(/, '没有记录每个源的失败原因');
   assert.ok(service.includes('的 SHA256 对不上'), '哈希不符时直接判死，没有换下一个源');
   assert.match(service, /string\.Join\("；", tried\)/, '全部失败时没有把原因汇总给用户');

@@ -23,6 +23,12 @@ namespace WhaleLauncher
             _sup = sup;
         }
 
+        public async Task FlushAsync()
+        {
+            await _gate.WaitAsync();
+            _gate.Release();
+        }
+
         public Task<ApiResult> SaveAsync(Func<IDictionary<string, object>> build)
             => RunAsync(() => _sup.PatchConfigurationAsync(build()));
 

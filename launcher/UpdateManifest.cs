@@ -23,6 +23,10 @@ namespace WhaleLauncher
     public sealed class UpdateManifest
     {
         public string Latest { get; set; } = "";
+        public int Epoch { get; set; }
+        public string BrandLatest { get; set; } = "";
+        public string Target { get; set; } = "";
+        public UpdateManifest Copy() => (UpdateManifest)MemberwiseClone();
         public DateTimeOffset ReleasedAt { get; set; }
         public double ForceAfterHours { get; set; } = 24;
         public bool? Force { get; set; }
@@ -143,6 +147,55 @@ namespace WhaleLauncher
             return "";
         }
 
+        public static int LocalEpoch(string baseDir)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(File.ReadAllText(Path.Combine(baseDir, "package.json")));
+                return Int(doc.RootElement, "updateEpoch");
+            }
+            catch { return 0; }
+        }
+
+        // 保留原始清单用于缓存；只把选中轨道交给现有 UI 和安装流程。
+        public static UpdateManifest Resolve(string local, int localEpoch, UpdateManifest source)
+        {
+            if (source == null) return null;
+            var m = source.Copy();
+            if (localEpoch <= 0) return m;
+            if (m.Epoch < localEpoch)
+            {
+                m.Latest = local;
+                return m;
+            }
+            var version = string.IsNullOrWhiteSpace(m.BrandLatest) ? m.Latest : m.BrandLatest;
+            var target = string.IsNullOrWhiteSpace(m.Target) ? version : m.Target;
+            // 展示版本与安装包版本必须一致，不能提示一个版本却安装另一个。
+            if (string.IsNullOrWhiteSpace(version) || target != version)
+            {
+                m.Latest = local;
+                return m;
+            }
+            m.Latest = version;
+            if (m.Epoch > localEpoch)
+            {
+                // 跨代时数字版本可能降低，旧代的强制阈值不能混入新代。
+                m.KillBelow = "";
+                m.ForceFrom = "";
+            }
+            return m;
+        }
+
+        public static bool HasUpdate(string local, int localEpoch, UpdateManifest source)
+        {
+            if (source == null || string.IsNullOrWhiteSpace(local)) return false;
+            var m = Resolve(local, localEpoch, source);
+            if (localEpoch > 0 && source.Epoch < localEpoch) return false;
+            if (localEpoch > 0 && source.Epoch > localEpoch)
+                return m.Latest != local && !string.IsNullOrWhiteSpace(m.Latest);
+            return CompareVersion(local, m.Latest) < 0;
+        }
+
         /// <summary>拉清单并判定。永不抛：任何异常都变成「拿不到 + 放行」。</summary>
         public static async Task<ManifestCheck> FetchAsync(string baseDir)
         {
@@ -184,8 +237,15 @@ namespace WhaleLauncher
 
             try
             {
-                result.Policy = Decide(result.Current, result.Manifest, DateTimeOffset.UtcNow);
-                result.HasUpdate = CompareVersion(result.Current, result.Manifest.Latest) < 0;
+                var epoch = LocalEpoch(baseDir);
+                var source = result.Manifest;
+                result.HasUpdate = HasUpdate(result.Current, epoch, source);
+                result.Manifest = Resolve(result.Current, epoch, source);
+                // 已由代次确认跨代，不能再让旧代的大版本号拦住策略判断。
+                var policyVersion = epoch > 0 && source.Epoch > epoch ? "0.0.0" : result.Current;
+                result.Policy = result.HasUpdate
+                    ? Decide(policyVersion, result.Manifest, DateTimeOffset.UtcNow)
+                    : UpdatePolicy.Ok;
             }
             catch (Exception ex)
             {
@@ -278,6 +338,9 @@ namespace WhaleLauncher
             if (r.ValueKind != JsonValueKind.Object) return null;
 
             var m = new UpdateManifest { Latest = Str(r, "latest") };
+            m.Epoch = Int(r, "epoch");
+            m.BrandLatest = Str(r, "brand_latest");
+            m.Target = Str(r, "target");
             if (string.IsNullOrWhiteSpace(m.Latest)) return null;
 
             if (r.TryGetProperty("released_at", out var ra) && ra.ValueKind == JsonValueKind.String
@@ -313,6 +376,10 @@ namespace WhaleLauncher
         private static string Str(JsonElement e, string name)
             => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? (v.GetString() ?? "") : "";
 
+        private static int Int(JsonElement e, string name)
+            => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number
+                && v.TryGetInt32(out var n) && n >= 0 ? n : 0;
+
         // ── 缓存：断网时用上次成功拿到的策略，而不是「什么都拿不到就放行」 ──
 
         private static void SaveCache(UpdateManifest m)
@@ -324,6 +391,9 @@ namespace WhaleLauncher
                 var obj = new
                 {
                     latest = m.Latest,
+                    epoch = m.Epoch,
+                    brand_latest = m.BrandLatest,
+                    target = m.Target,
                     released_at = m.ReleasedAt == default ? "" : m.ReleasedAt.ToString("o", CultureInfo.InvariantCulture),
                     force_after_hours = m.ForceAfterHours,
                     force = m.Force,

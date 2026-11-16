@@ -30,7 +30,8 @@ test('市场右侧可打开随启动器打包的规范', () => {
 test('本地安装提示来源和替换版本，人设页应用市场预设须确认', () => {
   const market = read('launcher/Views/PluginMarketPage.xaml.cs');
   const persona = read('launcher/Views/PersonaPage.xaml.cs');
-  assert.match(market, /InstallLocal\(picker.FileName,[\s\S]*ConfirmLocalInstall\(info, current\)/);
+  // 文件选择已收进主窗口弹层（AppFilePicker），安装入口仍要保持确认回调。
+  assert.match(market, /AppFilePicker\.Open\([^)]*\)[\s\S]*InstallLocal\(file,[\s\S]*ConfirmLocalInstall\(info, current\)/);
   assert.match(market, /本地 ZIP 未经鲸鲸插件市场审核或签名/);
   assert.match(market, /将替换已安装/);
   assert.match(market, /作者已变化/);

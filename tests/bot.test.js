@@ -24,6 +24,8 @@ function makeConfig(overrides = {}) {
 
 function makeBot({ config = makeConfig(), llm, linkReader = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-bot-'));
+  config.paths = { root: dir, dataDir: path.join(dir, 'data'), configFile: path.join(dir, 'config.json'), settingsFile: path.join(dir, 'data/settings.json') };
+  fs.writeFileSync(config.paths.configFile, JSON.stringify(config));
   const store = new Store({ file: path.join(dir, 'store.json'), limits: config.memory });
   const mockLlm = llm || { isMock: true, model: 'mock', reload() {}, describe() { return {}; } };
   const bot = new Bot({ config, store, llm: mockLlm, logger: null, mockChunkDelayMs: 0, linkReader });
@@ -57,6 +59,53 @@ const groupMsg = (text, extra = {}) => ({
   text,
   chatTitle: '深海鱼塘',
   ...extra,
+});
+
+test('讨论和多分句回复仍遵守私聊群聊整轮字数设置', async () => {
+  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, discussionMaxChars: 400, emojiChance: 1 } });
+  const { bot, cleanup } = makeBot({ config });
+  try {
+    for (const [message, limit] of [[privateMsg, 40], [groupMsg, 20]]) {
+      const decision = await bot.decide(message('为什么今天你觉得这么开心', { atMe: true }));
+      decision.msg.discussion = true;
+      bot.rng = () => 0;
+      const bubbles = bot.finalize(decision, '这是一段非常长的回答'.repeat(30) + '，' + '还有很多补充解释'.repeat(30));
+      assert.ok(Array.from(bubbles.join('')).length <= limit, bubbles.join(''));
+    }
+  } finally { cleanup(); }
+});
+
+test('追加表情按整轮剩余字数决定，完整保留能放下的表情', () => {
+  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, emojiChance: 1 } });
+  const { bot, cleanup } = makeBot({ config });
+  try {
+    for (const chatType of ['private', 'group']) {
+      const limit = chatType === 'group' ? 20 : 40;
+      for (const maxBubbles of [1, 2]) {
+        config.chat.maxBubbles = maxBubbles;
+        for (const discussion of [false, true]) {
+          for (const source of ['kaomoji', 'random-emoji', 'model-emoji']) {
+            for (const size of ['short', 'boundary', 'full']) {
+              let draws = 0;
+              bot.rng = () => source === 'random-emoji' && draws++ === 1 ? 0.75 : 0;
+              const decision = { action: 'reply', key: 'web:' + chatType, msg: { chatType, discussion, text: '原消息' } };
+              const body = size === 'short' ? '好呀' : '答'.repeat(size === 'full' ? limit : limit - 1);
+              const bubbles = bot.finalize(decision, body + (source === 'model-emoji' ? '🐋' : ''));
+              const label = JSON.stringify({ chatType, maxBubbles, discussion, source, size });
+              assert.ok(Array.from(bubbles.join('')).length <= limit, label);
+              assert.ok(bubbles.length <= maxBubbles, label);
+              if (size === 'full' || (size === 'boundary' && (maxBubbles === 1 || source === 'kaomoji'))) {
+                assert.deepEqual(bubbles, [body], label);
+              } else {
+                const extra = source === 'kaomoji' ? '(๑•̀ㅂ•́)و✧' : '🐋';
+                assert.deepEqual(bubbles, maxBubbles === 1 ? [body + ' ' + extra] : [body, extra], label);
+              }
+            }
+          }
+        }
+      }
+    }
+  } finally { cleanup(); }
 });
 
 test('私聊一定会回复，并把回复写进记忆', async () => {
@@ -489,11 +538,19 @@ test('群禁言魔咒只给同一个微信私聊里的主人，并在 30 分钟�
   assert.equal((await bot.decide(owner('禁言 测试群'))).commandType, 'admin_hint');
 });
 
-test('讨论类问题会标记为 discussion，普通闲聊不会', async () => {
+test('讨论只按当前消息判断，同会话短句及旧讨论存档不触发长篇回复', async () => {
   const { bot, cleanup } = makeBot();
   const d1 = await bot.decide(privateMsg('你觉得人应该追求稳定还是冒险'));
   assert.equal(d1.msg.discussion, true);
-  // 换个聊天对象：讨论模式的 10 分钟粘性只作用于原会话
+  const state = bot.store.getState(d1.key);
+  state.discussUntil = Date.now() + 10 * 60000;
+  for (const text of ['我调了一下', '唉还得调啊', '好的', '在吗']) {
+    const next = await bot.decide(privateMsg(text));
+    assert.equal(next.msg.discussion, false, text);
+    assert.equal(state.discussUntil, 0);
+    assert.doesNotMatch(next.system + (next.tail || ''), /【认真讨论模式】/);
+  }
+  assert.equal((await bot.decide(privateMsg('你觉得人应该追求稳定还是冒险'))).msg.discussion, true);
   const d2 = await bot.decide(privateMsg('在吗', { chatId: 's2' }));
   assert.equal(d2.msg.discussion, false);
   cleanup();

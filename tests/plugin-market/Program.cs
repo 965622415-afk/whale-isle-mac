@@ -30,6 +30,37 @@ try
         throw new Exception("预期拒绝无效插件");
     }
 
+    var releaseInfo = info with { AppEpoch = 2, MinAppVersion = "1.0.0", MaxAppVersion = "1.0.9" };
+    Check(!PluginMarket.Compatible(releaseInfo, "4.1.6.1", 1));
+    Check(PluginMarket.Compatible(releaseInfo, "1.0.0", 2));
+    Check(!PluginMarket.Compatible(releaseInfo, "0.9.9", 2));
+    Check(!PluginMarket.Compatible(releaseInfo, "1.1.0", 2));
+    Check(!PluginMarket.Compatible(info, "5.0.0", 2));
+    Check(PluginMarket.Compatible(info, "4.1.6.1", 0));
+    Check(PluginMarket.Compatible(info with { AppEpoch = 1 }, "4.1.6.1", 1));
+    Check(PluginMarket.ReadPackage(Pack(releaseInfo)).Info.AppEpoch == 2);
+    Check(JsonSerializer.Serialize(releaseInfo).Contains("\"appEpoch\":2"));
+    Check(releaseInfo.CompatibilityLabel.Contains("正式版"));
+    Reject(() => PluginMarket.ReadPackage(Pack(info with { AppEpoch = -1 })));
+    Reject(() => PluginMarket.ReadPackage(Pack(info with { AppEpoch = 3 })));
+    File.WriteAllBytes(Path.Combine(dir, "wrong-epoch.zip"), Pack(releaseInfo));
+    Reject(() => new PluginMarket(dir).InstallLocal(Path.Combine(dir, "wrong-epoch.zip")));
+    var bothInfo = info with { AppCompatibility = [
+        new PluginAppRange(1, "4.1.0", "4.1.6.1"),
+        new PluginAppRange(2, "1.0.0", "1.0.9")
+    ] };
+    Check(PluginMarket.Compatible(bothInfo, "4.1.6.1", 1));
+    Check(PluginMarket.Compatible(bothInfo, "1.0.0", 2));
+    Check(!PluginMarket.Compatible(bothInfo, "4.1.7", 1));
+    Check(!PluginMarket.Compatible(bothInfo, "1.1.0", 2));
+    Check(!PluginMarket.Compatible(bothInfo, "4.1.6.1", 2));
+    Check(!PluginMarket.Compatible(bothInfo, "1.0.0", 1));
+    Check(PluginMarket.ReadPackage(Pack(bothInfo)).Info.AppCompatibility.Length == 2);
+    Check(bothInfo.CompatibilityLabel.Contains("正式版") && bothInfo.CompatibilityLabel.Contains("旧版"));
+    Reject(() => PluginMarket.ReadPackage(Pack(bothInfo with { AppCompatibility = [] })));
+    Reject(() => PluginMarket.ReadPackage(Pack(bothInfo with { AppCompatibility = [new(1, "4.1.0"), new(1, "4.1.2")] })));
+    Reject(() => PluginMarket.ReadPackage(Pack(bothInfo with { AppCompatibility = [new(2, "1.1.0", "1.0.0")] })));
+
     // 先确认内置公钥能验证 Node crypto.sign 生成的 DER 签名。
     PluginTrust.ResetForTests();
     Check(PluginTrust.Verify(Encoding.UTF8.GetBytes("node-signed payload"),
@@ -154,6 +185,8 @@ try
     }
     var portablePackage = PluginMarket.ReadPackage(File.ReadAllBytes(share));
     Check(portablePackage.Info.MinAppVersion == "4.1.5" && portablePackage.Info.Kind == "persona");
+    Check(PluginMarket.Compatible(portablePackage.Info, "4.1.5", 1));
+    Check(PluginMarket.Compatible(portablePackage.Info, "1.0.0", 2));
     Check(!portablePackage.Persona.Contains("must-not-share") && !portablePackage.Persona.Contains("permissions"));
     Check(market.InstallLocal(share));
     market.SetEnabled("portable-fish", true);
@@ -234,6 +267,8 @@ try
         market.Uninstall(summaryId);
     }
     var messageInfo = info with { Id = "message-demo", Api = 3, Kind = "message", MinAppVersion = "4.1.0", Hooks = ["chat.pre_reply"], Permissions = [] };
+    Check(PluginMarket.ReadPackage(Pack(messageInfo with { AppEpoch = 2, MinAppVersion = "1.0.0" })).Info.AppEpoch == 2);
+    Reject(() => PluginMarket.ReadPackage(Pack(messageInfo with { AppEpoch = 2, MinAppVersion = "0.9.0" })));
     Reject(() => PluginMarket.ReadPackage(Pack(messageInfo with { MinAppVersion = "4.0.8" })));
     Reject(() => PluginMarket.ReadPackage(Pack(messageInfo with { Hooks = ["unknown"] })));
     Reject(() => PluginMarket.ReadPackage(Pack(messageInfo with { Permissions = ["filesystem"] })));
@@ -276,6 +311,7 @@ try
         Hooks = ["tool.run", "chat.search"], Permissions = ["system.full"] };
     var script = Encoding.UTF8.GetBytes("module.exports.run = async () => ({text:'你好😀'});");
     Reject(() => PluginMarket.ReadPackage(Pack(nativeInfo with { MinAppVersion = "4.1.1" }, "plugin.js", script)));
+    Check(PluginMarket.ReadPackage(Pack(nativeInfo with { AppEpoch = 2, MinAppVersion = "1.0.0" }, "plugin.js", script)).Info.AppEpoch == 2);
     Reject(() => PluginMarket.ReadPackage(Pack(nativeInfo with { Permissions = [] }, "plugin.js", script)));
     Reject(() => PluginMarket.ReadPackage(Pack(nativeInfo with { ExecutionTimeoutMs = 0 }, "plugin.js", script)));
     Reject(() => PluginMarket.ReadPackage(Pack(nativeInfo, "plugin.wasm", script)));
@@ -323,5 +359,6 @@ namespace WhaleLauncher
     internal static class UpdateManifestService
     {
         internal static string LocalVersion(string _) => "4.1.5";
+        internal static int LocalEpoch(string _) => 1;
     }
 }

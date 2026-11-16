@@ -29,7 +29,7 @@ const { tagId, tagName, textMeta, urlHost } = require('../infra/privacy');
 const { saveSettings } = require('../infra/config');
 const time = require('../infra/time');
 const personaStore = require('../persona/store');
-const { sanitizeForModel, nameMatches } = require('../core/text');
+const { sanitizeForModel, nameMatches, stripInternalTimestamps } = require('../core/text');
 const { sendDenial } = require('../core/wechatSendPolicy');
 const trigger = require('../core/trigger');
 const { INSULT_RE, INSULT_LOOSE_RE } = require('../core/trigger');
@@ -896,9 +896,9 @@ class Bot {
 
     // 认真讨论（不是随口闲聊）→ 允许说长一点、有观点
     const discussPattern = /(讨论|探讨|你觉得|你怎么看|你认为|为什么|该不该|要不要|是不是应该|如何选择|怎么选|怎么看|有道理吗|值得吗|价值观|人生|意义|观点|看法|利弊|优缺点)/;
-    const discussUntil = Number(state.discussUntil) || 0;
-    const discussion = Boolean(discussUntil > nowMs || (clean.text && clean.text.length >= 8 && discussPattern.test(clean.text)));
-    if (discussion) state.discussUntil = nowMs + 10 * 60000; // 聊到一个话题就连续 10 分钟算讨论
+    // 只按本条请求判断，旧存档的讨论窗口不能把短句闲聊永久续成详细回答。
+    const discussion = Boolean(clean.text && clean.text.length >= 8 && discussPattern.test(clean.text));
+    state.discussUntil = 0;
     msg.discussion = discussion;
 
     // 6) 组装提示词：只加载「当前 chat + 当前说话人」的卡，绝不跨聊天取。
@@ -1776,7 +1776,7 @@ class Bot {
   }
 
   finalize(decision, text, { error = false } = {}) {
-    text = String(text == null ? '' : text).trim();
+    text = stripInternalTimestamps(text);
     // 模型主动退场标记 [[silence:分钟]]：先解析并从正文剥掉，再走后面的格式清理。
     const silenceMark = stripSilenceMark(text);
     text = silenceMark.text;
@@ -1937,9 +1937,15 @@ class Bot {
     if (decision.action === 'command') return foundEmoji ? [text, foundEmoji] : [text];
     const maxBubbles = Math.max(1, Number(this.config.chat.maxBubbles) || 2);
     const hard = LIMITS.maxOutputHard || 4000;
+    const normalMaxChars = Math.max(20, Math.min(Number(isGroup ? this.config.chat.groupMaxChars : this.config.chat.privateMaxChars) || LIMITS.maxOutputNormal, hard));
     const maxChars = msg.discussion
-      ? Math.max(20, Math.min(Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion, hard))
-      : Math.max(20, Math.min(Number(isGroup ? this.config.chat.groupMaxChars : this.config.chat.privateMaxChars) || LIMITS.maxOutputNormal, hard));
+      ? Math.min(normalMaxChars, Math.max(20, Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion))
+      : normalMaxChars;
+    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大。
+    if (!decision.diaryExpanded && Array.from(text).length > maxChars) {
+      text = Array.from(text).slice(0, maxChars - 1).join('').trimEnd() + '…';
+      decision.finalText = text;
+    }
     const preferSeparate = Boolean(msg.separateRequested);
     let bubbles;
     if (decision.diaryExpanded) {
@@ -1977,7 +1983,10 @@ class Bot {
         ? persona.kaomojiPick(this.rng)
         : ['🐋', '🥺', '😭', '✨', '💧', '🫧', '🍚'][Math.floor(this.rng() * 7)];
     }
-    if (extra) {
+    // 表情在正文截断后追加，必须连同合并时的空格一起占用整轮字数。
+    const extraChars = Array.from(extra).length + (bubbles.length >= maxBubbles ? 1 : 0);
+    const replyChars = bubbles.reduce((count, bubble) => count + Array.from(bubble).length, 0);
+    if (extra && replyChars + extraChars <= maxChars) {
       // 遵守 maxBubbles：气泡已经满了就并到最后一条，别偷偷多发一条
       if (bubbles.length < maxBubbles) bubbles.push(extra);
       else if (bubbles.length) bubbles[bubbles.length - 1] = (bubbles[bubbles.length - 1] + ' ' + extra).trim();

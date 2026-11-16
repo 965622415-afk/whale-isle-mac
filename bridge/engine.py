@@ -59,7 +59,9 @@ except Exception:
     except Exception:
         uia_boot = None
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-CONFIG_PATH = os.path.join(ROOT, 'config.json')
+CONFIG_PATH = os.path.join(ROOT, 'data', 'config.json')
+if not os.path.exists(CONFIG_PATH) and os.path.exists(os.path.join(ROOT, 'config.json')):
+    CONFIG_PATH = os.path.join(ROOT, 'config.json')
 try:
     CONFIG_MTIME_AT_START = os.path.getmtime(CONFIG_PATH)
 except OSError:
@@ -111,12 +113,13 @@ GOODNIGHT_TEXT = '晚安，电量快没了，我先睡啦，明天见～'
 CURRENT_CONFIG = {}
 CONFIG_SNAPSHOT = None
 _BOOT_CONFIG_VALID = False
-_cfg_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config.json')
+_cfg_path = CONFIG_PATH
 if not os.path.exists(_cfg_path):
-    _example = os.path.join(os.path.dirname(_cfg_path), 'config', 'config.example.json')
+    _example = os.path.join(ROOT, 'config', 'config.example.json')
     if os.path.exists(_example):
         try:
             import shutil
+            os.makedirs(os.path.dirname(_cfg_path), exist_ok=True)
             shutil.copyfile(_example, _cfg_path)
             log_call = True
         except Exception:
@@ -356,7 +359,7 @@ def write_accounts_cache(db_dir, account='', nick='', probe_others=True, deadlin
         log('账号缓存补写失败（不影响收发）：', repr(e))
         return False
 BRIDGE_LOCK_PORT = 47821
-VOICE_ENABLED = True
+VOICE_ENABLED = False
 VOICE_PROVIDER = 'auto'
 VOICE_BASE_URL = 'https://api.deepseek.com/v1/tools/asr'
 VOICE_MODEL = ''

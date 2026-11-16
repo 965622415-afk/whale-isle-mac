@@ -15,6 +15,17 @@ const date = value => dateFormat.format(new Date(value));
 const link = (href, text, className = 'text-link') => `<a class="${className}" href="${e(href)}" target="_blank" rel="noopener noreferrer">${e(text)} <span aria-hidden="true">↗</span></a>`;
 const isRelease = item => item && !item.draft && item.tag_name && item.published_at && Number.isFinite(Date.parse(item.published_at));
 
+function starPrompt() {
+  return `<div class="star-prompt"><div><strong>喜欢鲸鲸的话，送我们一颗小星星吧 ✦</strong><p>在 GitHub 点亮 Star，就是对开源创作的一份鼓励。免费使用，无需 Star 也能下载。</p></div>${link(APP, '去 GitHub 点个 Star', 'button secondary')}</div>`;
+}
+
+function withGitHub(html, data) {
+  const count = Number.isSafeInteger(data.stars) && data.stars >= 0 ? new Intl.NumberFormat('en-US').format(data.stars) : '—';
+  const label = count === '—' ? 'Star 数量暂不可用' : `${count} Stars，随官网部署更新`;
+  const button = `<a class="github-button" href="${APP}" target="_blank" rel="noopener noreferrer" aria-label="GitHub · ${label}" title="${label}"><span>GitHub</span><span class="github-stars"><span aria-hidden="true">☆</span> ${count}</span></a>`;
+  return html.replace('<div class="nav-actions">', `<div class="nav-actions">${button}`);
+}
+
 function releaseSlug(tag) {
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(tag)) throw new Error('发行版本标识无效');
   return tag;
@@ -124,6 +135,7 @@ function teamCards(team, prefix, preview = false) {
 function downloads(releases, latest) {
   const years = [...new Set(releases.map(item => date(item.published_at).slice(0, 4)))].sort().reverse();
   return intro('DOWNLOAD / RELEASE ARCHIVE', '把鲸鲸带回你的日常。', '最新正式版、完整更新记录与历史安装文件，都在这里。')
+    + starPrompt()
     + `<div class="download-overview"><section class="highlight-panel"><div><span class="tag"><span class="live-dot"></span>最新正式发行</span><h2>${e(releaseTitle(latest))}</h2><p>发布于 ${date(latest.published_at)} · Windows · ${latest.assets?.length || 0} 个发行文件</p><a class="button" href="./${releaseSlug(latest.tag_name)}/">查看下载与更新说明 <span aria-hidden="true">↗</span></a></div><span class="release-mark" aria-hidden="true">${e(latest.tag_name.replace(/^v/, ''))}</span></section><aside class="install-brief info-panel"><p class="eyebrow">FIRST HELLO</p><h2>三步，开始相处。</h2><ol><li>下载对应版本的安装文件</li><li>准备微信账号与模型 API Key</li><li>在桌面启动器中配置并启动</li></ol>${link(`${APP}#install-and-first-run`, '阅读安装指南')}</aside></div>`
     + `<section class="page-section" aria-labelledby="history-heading"><div class="section-heading"><div><p class="eyebrow">RELEASE ARCHIVE</p><h2 id="history-heading">下载历史</h2></div>${link(`${APP}/releases`, 'GitHub 发行记录')}</div>`
     + searchFilters('搜索版本', '版本号或更新标题', selectFilter('发布年份', 'year', years.map(year => [year, year])) + selectFilter('发行类型', 'kind', [['stable', '正式版'], ['preview', '预览版']]))
@@ -142,6 +154,7 @@ function releasePage(item, latest) {
     } catch { return false; }
   });
   return `<a class="back-link" href="../">← 全部发行版本</a>`
+    + starPrompt()
     + intro(item.prerelease ? 'PREVIEW RELEASE' : 'WHALE GIRL / RELEASE', e(releaseTitle(item)), `<time datetime="${date(item.published_at)}">${date(item.published_at)}</time> · ${item.prerelease ? '预览版' : '正式版'}`)
     + (item.prerelease ? '<div class="notice">这是预览版本，可能存在不稳定行为。安装前请备份配置与数据。</div>' : item.tag_name !== latest.tag_name ? '<div class="notice">这是历史版本，可能缺少后续修复。回退前请备份配置与数据，并核对版本兼容性。</div>' : '')
     + `<div class="release-layout"><section class="release-notes"><p class="eyebrow">WHAT CHANGED</p><h2>完整更新说明</h2>${renderedNotes.html}</section>
@@ -328,9 +341,10 @@ function buildSite({ root = path.resolve(__dirname, '..'), output, data, tips: s
   function write(route, title, description, content, current) {
     const folder = path.join(target, route);
     fs.mkdirSync(folder, { recursive: true });
-    fs.writeFileSync(path.join(folder, 'index.html'), layout(route, title, description, content, current));
+    fs.writeFileSync(path.join(folder, 'index.html'), withGitHub(layout(route, title, description, content, current), data));
   }
-  fs.writeFileSync(path.join(target, 'index.html'), home);
+  home = home.replace('<div class="download-notes">', `${starPrompt()}<div class="download-notes">`);
+  fs.writeFileSync(path.join(target, 'index.html'), withGitHub(home, data));
   write('downloads/', '下载中心与历史版本', '鲸鲸 Windows 下载与完整发行历史，每个版本都有独立下载页。', downloads(releases, data.latest), 'downloads/');
   for (const item of releases) write(`downloads/${releaseSlug(item.tag_name)}/`, releaseTitle(item), '查看这个版本的更新说明与官方发行文件。', releasePage(item, data.latest), 'downloads/');
   write('plugins/', '插件市场', '浏览鲸鲸社区插件，了解来源、权限与兼容范围。', pluginsPage(plugins, data), 'plugins/');

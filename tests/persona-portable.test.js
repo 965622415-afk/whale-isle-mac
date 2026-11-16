@@ -21,7 +21,8 @@ async function fixture(t) {
 }
 
 async function post(app, route, body) {
-  const response = await fetch(app.url + route, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const response = await fetch(app.url + route, { method: 'POST', headers: { 'content-type': 'application/json',
+    ...(route === '/api/care/sent' ? { 'x-bot-token': app.runtime.gateways.get('wechat').options.inboundToken, 'x-whale-bridge': '1' } : {}) }, body: JSON.stringify(body) });
   const result = await response.json();
   assert.equal(result.ok, true, result.error);
   return result;
@@ -93,4 +94,54 @@ test('启用包直接可见，应用设置并编辑本地副本，切换和离�
   const denied = await fetch(app.url + '/api/persona/export', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
   assert.equal(denied.status, 400);
   assert.equal(config.persona.customPrompt, longPrompt);
+});
+
+test('空字段跨重载保留，市场首次应用不生成副本，可恢复作者版本', async t => {
+  const app = await fixture(t);
+  const dir = path.join(app.root, 'data/plugins');
+  fs.mkdirSync(dir, { recursive: true });
+  const marker = path.join(dir, 'reset.persona.json');
+  fs.writeFileSync(marker, JSON.stringify({ schemaVersion: 1, name: '测试', personaName: '鱼',
+    personality: '安静', job: '', appearance: '', background: '', customPrompt: '' }));
+  await post(app, '/api/persona/preset', { id: 'market-reset' });
+  const copy = path.join(app.root, 'data/personas/market-reset.json');
+  assert.equal(fs.existsSync(copy), false);
+  let snapshot = readSnapshot(app.root, {});
+  for (const key of ['job', 'appearance', 'background', 'customPrompt'])
+    assert.equal(snapshot['/api/persona'].persona[key], '', key);
+  await post(app, '/api/persona', { personality: '本地修改' });
+  assert.equal(fs.existsSync(copy), true);
+  await post(app, '/api/persona/preset/reset-market', { id: 'market-reset' });
+  assert.equal(app.runtime.config.persona.personality, '本地修改');
+  assert.equal(presets.load(app.runtime.config, 'market-reset').personality, '安静');
+  const result = await saveLocalConfiguration(app.root, { path: '/api/persona/preset', body: { id: 'market-reset' } }, {});
+  assert.equal(result.ok, true);
+  snapshot = readSnapshot(app.root, {});
+  assert.equal(snapshot['/api/persona'].persona.job, '');
+  assert.equal(snapshot['/api/persona'].persona.personality, '安静');
+});
+
+test('人设页气泡数保存后读取和离线重载一致', async t => {
+  const app = await fixture(t);
+  await post(app, '/api/persona', { maxBubbles: 5, historyTurns: 180 });
+  const current = await (await fetch(app.url + '/api/persona')).json();
+  assert.equal(current.persona.maxBubbles, 5);
+  assert.equal(readSnapshot(app.root, {})['/api/persona'].persona.maxBubbles, 5);
+});
+
+test('主动搭话成功记录进入对应私聊上下文', async t => {
+  const app = await fixture(t);
+  await post(app, '/api/care/sent', { chat: 'contact-test', text: '刚才主动说的话', group: false });
+  const messages = app.runtime.store.messages('wechat:u:contact-test', 10);
+  assert.equal(messages.at(-1).role, 'assistant');
+  assert.equal(messages.at(-1).text, '刚才主动说的话');
+  assert.equal(app.runtime.store.messages('wechat:g:contact-test', 10).length, 0);
+  const receipt = { id: 'same-receipt', chat: 'contact-test', text: '有回执的主动消息' };
+  await post(app, '/api/care/sent', receipt);
+  const repeated = await post(app, '/api/care/sent', receipt);
+  assert.equal(repeated.duplicate, true);
+  assert.equal(app.runtime.store.messages('wechat:u:contact-test', 10).filter(m => m.text === receipt.text).length, 1);
+  app.runtime.gateways.get('wechat').options.inboundToken = 'test-only-token';
+  const rejected = await fetch(app.url + '/api/care/sent', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(receipt) });
+  assert.equal(rejected.status, 403);
 });

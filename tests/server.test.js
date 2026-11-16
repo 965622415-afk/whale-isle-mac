@@ -12,6 +12,9 @@ const { startServer } = require('../server');
 // 网页聊天入口已下线：/api/chat 现在只认桥接 token
 const TOKEN = 'test-token';
 
+// 断言失败也不能把服务留在后台：漏关的监听端口会让 node --test 永远等不到事件循环结束。
+const opened = new Set();
+
 /** 起一个临时目录 + 临时端口的服务 */
 async function boot(configPatch = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-srv-'));
@@ -23,8 +26,17 @@ async function boot(configPatch = {}) {
   fs.writeFileSync(path.join(root, 'config.json'), JSON.stringify(cfg));
   const instance = await startServer({ root, env: { WHALE_LOG_FILE: '' }, port: 0, openBrowser: false });
   instance.runtime.bot.mockChunkDelayMs = 0;
+  opened.add(instance);
   return instance;
 }
+
+// 无论用例是否失败，文件结束时都收掉还开着的临时服务。
+test.after(async () => {
+  for (const instance of opened) {
+    try { await instance.close(); } catch { /* 已关闭或关闭失败都不影响其他用例的结论 */ }
+  }
+  opened.clear();
+});
 
 async function collectSse(url, payload) {
   const res = await fetch(url, {

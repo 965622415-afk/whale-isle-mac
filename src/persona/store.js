@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { IDENTITY_FIELDS } = require('./profile');
+const { upgradeLegacyPersona } = require('./legacy');
 
 const FILE_NAME = 'persona.json';
 
@@ -103,19 +104,7 @@ function save(config, patch) {
     try {
       const { saveConfigPatch } = require('../infra/configPatch');
       saveConfigPatch(config, configPatch);
-    } catch (err) {
-      // 写不了文件也要让本次生效，不然界面改了却毫无反应
-      for (const [dotted, value] of Object.entries(configPatch)) {
-        const parts = dotted.split('.');
-        let cur = config;
-        for (let i = 0; i < parts.length - 1; i += 1) {
-          if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object') cur[parts[i]] = {};
-          cur = cur[parts[i]];
-        }
-        cur[parts[parts.length - 1]] = value;
-      }
-      if (config.__logger) config.__logger.warn('群聊/长度设置写入 config.json 失败，仅本次生效：' + err.message);
-    }
+    } catch (err) { throw new Error('配置写入失败，部分设置可能已更改：' + err.message); }
   }
   // 以当前生效值为底，避免“只改了一半”把别的设置冲掉（也兼容没有写文件权限的环境）
   const base = {
@@ -133,31 +122,28 @@ function save(config, patch) {
     sourcePreset: config.persona ? config.persona.sourcePreset : undefined,
   };
   for (const k of Object.keys(base)) if (base[k] === undefined) delete base[k];
-  const next = { ...base, ...load(config), ...patchObj };
+  const next = { ...base, ...upgradeLegacyPersona(load(config)), ...patchObj };
   // config 归属的键即使被写进 patch，也不再进 persona.json
   for (const key of Object.keys(CONFIG_PATHS)) delete next[key];
   // patch 里明确给了空字符串的键，语义是「清空」，必须让 apply() 看到；
   // 以前一律「清掉空值」，导致 apply() 读不到这个键，旧值永远删不掉 ——
   // 表现就是：导入过一次人设预设后，自定义提示词永久生效，改性格/语气/外貌全都没反应。
-  const explicitClear = new Set(
-    Object.entries(patchObj).filter(([, v]) => v === '').map(([k]) => k),
-  );
   const forApply = {};
   for (const [k, v] of Object.entries(next)) {
     if (v === null || v === undefined) continue;
-    if (v === '' && !explicitClear.has(k)) continue;
     forApply[k] = v;
   }
   if (file) {
-    // 落盘时仍然不写空字符串，保持文件干净
-    const forFile = { ...forApply };
-    for (const [k, v] of Object.entries(forFile)) if (v === '') delete forFile[k];
     try {
       fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, JSON.stringify(forFile, null, 2), 'utf8');
-    } catch {
-      /* 测试环境可能没有目录权限，忽略 */
-    }
+      const tmp = file + '.' + process.pid + '.tmp';
+      try {
+        fs.writeFileSync(tmp, JSON.stringify(forApply, null, 2), 'utf8');
+        fs.renameSync(tmp, file);
+      } finally {
+        try { fs.unlinkSync(tmp); } catch { /* rename 成功后临时文件已不存在 */ }
+      }
+    } catch (err) { throw new Error('人设写入失败，部分设置可能已更改：' + err.message); }
   }
   apply(config, forApply);
   // 保存条数必须覆盖模型窗口及本轮输入/回复，否则面板设了 100 实际只剩 40
@@ -171,8 +157,9 @@ function save(config, patch) {
   // 当前人设来自自建预设时，把这次保存回写预设；内置/市场预设不动
   try {
     const source = String((config.persona && config.persona.sourcePreset) || '');
-    if (source) require('./presets').updateFromConfig(config, source);
-  } catch { /* 预设回写失败不影响本次人设保存 */ }
+    if (source && patchObj.sourcePreset === undefined && !require('./presets').updateFromConfig(config, source)
+      && source.startsWith('user-')) throw new Error('自建预设不存在或无法写入');
+  } catch (err) { throw new Error('人设已保存，但预设同步失败：' + err.message); }
   return forApply;
 }
 
@@ -241,7 +228,7 @@ function clear(config) {
 
 /** 把存档合并进 config（提示词 / 人设内容从这里读） */
 function apply(config, data) {
-  data = data || {};
+  data = upgradeLegacyPersona(data || {});
   if (!config.persona) config.persona = {};
   config.persona.emojiLevel = data.emoji || '';
 

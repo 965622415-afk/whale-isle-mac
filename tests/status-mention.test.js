@@ -68,9 +68,10 @@ test('所有小时均不注入随机生活背景', () => {
   cleanup();
 });
 
-test('时间还是要给的（不然她会活在过去）', () => {
+test('保留当前日期但不再给模型注入消息具体时刻', () => {
   const { config, cleanup } = makeConfig();
   const sys = promptAt(config, new Date(2026, 9, 26, 15, 42, 0));
-  assert.match(sys, /15:42/, '当前时间必须出现在提示词里');
+  assert.match(sys, /2026年10月26日/, '当前日期仍然可用');
+  assert.doesNotMatch(sys, /15:42/, '消息时间不注入模型正文');
   cleanup();
 });

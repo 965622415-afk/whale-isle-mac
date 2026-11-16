@@ -245,7 +245,7 @@ test('别名是其他昵称的前缀时不能误删', () => {
   assert.equal(plainOther.text, '小鲸鱼好可爱');
 });
 
-test('认真讨论时允许更长回复，并带观点/例子要求', () => {
+test('认真讨论保留观点要求，但不绕过私聊字数设置', () => {
   const sys = assemblePrompt({
     config,
     msg: { chatType: 'private', senderName: '小海', discussion: true },
@@ -253,7 +253,7 @@ test('认真讨论时允许更长回复，并带观点/例子要求', () => {
   }).prompt;
   assert.match(sys, /认真讨论模式/);
   assert.match(sys, /说清观点和必要理由/);
-  assert.match(sys, /400/);
+  assert.match(sys, new RegExp(`最多约 ${config.chat.privateMaxChars} 字`));
   const plain = assemblePrompt({
     config,
     msg: { chatType: 'private', senderName: '小海' },

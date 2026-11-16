@@ -172,7 +172,7 @@ class ConfigSnapshotTests(unittest.TestCase):
         self.assertTrue(scope['reload_config'](config={}))
         self.assertEqual(scope['STALE_AFTER'], 120)
         self.assertEqual(scope['VOICE_MODEL'], '')
-        self.assertTrue(scope['VOICE_ENABLED'])
+        self.assertFalse(scope['VOICE_ENABLED'])
         self.assertEqual(scope['MASTER_WXID'], '')
 
     def test_invalid_shape_does_not_partially_publish(self):

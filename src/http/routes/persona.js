@@ -89,6 +89,12 @@ module.exports = function register(router) {
     });
   });
 
+  router.post('/api/persona/preset/reset-market', async (runtime, req, res) => {
+    const body = await readBody(req);
+    const result = presets.resetMarketCopy(runtime.config, body && body.id);
+    return json(res, result.ok ? 200 : 400, result);
+  });
+
   // 另存为 / 更新自建预设
   router.post('/api/persona/preset/save', async (runtime, req, res) => {
     const body = await readBody(req);
