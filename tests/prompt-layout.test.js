@@ -101,7 +101,7 @@ test('日期行只在 system 里出现一次，跟着 now 走（不写死年份�
   assert.match(sys1, /按下面那行「今天是…」回答/);
 });
 
-test('历史消息时间戳：首条带、间隔不到 5 分钟不带、≥5 分钟带、跨天带', () => {
+test('历史与当前消息不注入时间戳，跨天也只保留消息顺序', () => {
   const at = (day, h, m) => new Date(2026, 10, day, h, m, 0).getTime();
   const history = [
     { role: 'user', name: '阿甲', uid: 'a', text: '九点那条', ts: at(3, 9, 0) },
@@ -112,11 +112,9 @@ test('历史消息时间戳：首条带、间隔不到 5 分钟不带、≥5 分
   const turns = buildTurns({ chatType: 'private', senderName: '小海', text: '现在这条', ts: at(3, 9, 10) }, history, '', '');
   const text = turns.map((t) => t.content).join('\n');
 
-  assert.match(text, /\[11-03 09:00\] 九点那条/, '首条历史要带时间戳');
-  assert.doesNotMatch(text, /\[11-03 09:01\]/, '隔 1 分钟不该再打标记（太吵，也省 token）');
-  assert.match(text, /\[11-03 09:06\] 六分钟后/, '隔了 5 分钟以上要重新打标记');
-  assert.match(text, /\[11-04 00:10\] 跨天那条/, '跨天必须带日期，否则模型不知道过了一天');
-  assert.match(text, /\[11-03 09:10\] 现在这条/, '当前这条永远带时间戳');
+  assert.doesNotMatch(text, /\[\d{2}-\d{2} \d{2}:\d{2}\]/);
+  for (const item of history) assert.ok(text.includes(item.text));
+  assert.ok(text.endsWith('现在这条'));
 });
 
 test('同一条消息当「当前」和当「历史」，时间戳字符串完全一致', () => {
@@ -129,8 +127,8 @@ test('同一条消息当「当前」和当「历史」，时间戳字符串完�
   }).prompt;
 
   const stamps = (s) => (s.match(/\[\d{2}-\d{2} \d{2}:\d{2}\]/g) || []);
-  assert.deepEqual([...new Set(stamps(asCurrent))], ['[11-03 15:48]']);
-  assert.ok(stamps(asHistory).includes('[11-03 15:48]'), '当历史时渲染出来的字符串必须一模一样');
+  assert.deepEqual(stamps(asCurrent), []);
+  assert.deepEqual(stamps(asHistory), []);
 });
 
 test('当前消息顺序固定：正文 → 记忆块 → 本轮状态', () => {

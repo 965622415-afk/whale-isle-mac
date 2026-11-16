@@ -731,6 +731,16 @@ class BridgeContractTest(unittest.TestCase):
         self.assertEqual(env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')['status'], 'confirmed')
         env['gui']._uia.open_chat.assert_called_once()
 
+    def test_bridge_initializes_missing_uia_cache_before_attachment(self):
+        env = self.send_environment()
+        ready = env['gui']._uia
+        env['gui']._uia = None
+        env['gui']._get_uia = Mock(return_value=ready)
+        outcome = env['send_sticker']('fake.png', 'Peer', 'peer', 'g1', 'one-shot')
+        self.assertEqual(outcome['status'], 'confirmed')
+        env['gui']._get_uia.assert_called_once()
+        env['guarded_sticker_send'].assert_called_once()
+
     def test_bridge_never_sends_when_open_chat_lands_on_wrong_title(self):
         env = self.send_environment()
         env['gui']._uia = SimpleNamespace(

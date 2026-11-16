@@ -11,7 +11,7 @@
 const care = require('../../services/care');
 const { careForChat } = require('../../services/careChat');
 const { errorMessage } = require('../../infra/errors');
-const { json } = require('../util');
+const { json, readBody } = require('../util');
 const { describeError } = require('../../infra/errors');
 
 module.exports = function register(router) {
@@ -56,6 +56,27 @@ module.exports = function register(router) {
     } catch (err) {
       runtime.logger.warn('生成搭话失败：' + describeError(err));
       return json(res, 500, { ok: false, error: errorMessage(err) });
+    }
+  });
+
+  router.post('/api/care/sent', async (runtime, req, res) => {
+    const body = await readBody(req);
+    if (!runtime.gateways.get('wechat')?.verifyToken(req, body))
+      return json(res, 403, { ok: false, error: '桥接 token 不正确' });
+    const chat = String(body?.chat || '').trim();
+    const text = String(body?.text || '').trim();
+    if (!chat || chat.length > 200 || /[\r\n]/.test(chat) || !text || text.length > 4000)
+      return json(res, 400, { ok: false, error: '搭话记录无效' });
+    const key = `wechat:${body.group === true ? 'g' : 'u'}:${chat}`;
+    const id = String(body.id || '').trim().slice(0, 100);
+    const msgId = id ? 'care:' + id : '';
+    try {
+      if (msgId && runtime.store.isDuplicate(key, msgId)) return json(res, 200, { ok: true, duplicate: true });
+      runtime.store.appendMessage(key, { role: 'assistant', name: runtime.config.persona.name, text, ts: Date.now(), ...(msgId ? { msgId } : {}) });
+      return json(res, 200, { ok: true });
+    } catch (err) {
+      runtime.logger.warn('主动搭话记录失败：' + describeError(err));
+      return json(res, 500, { ok: false, error: '搭话已发送，但记录失败' });
     }
   });
 };

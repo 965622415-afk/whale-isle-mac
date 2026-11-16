@@ -201,11 +201,11 @@
   },
   "voice": {
     "_说明": "语音消息转文字。provider=auto 时按接口地址判断：含 dashscope 走百炼，含 api.deepseek.com 走 DeepSeek。DeepSeek 不需要模型名，最长 120 秒。apiKey 留空则用同源服务商的 Key。enabled=false 时不下载、不请求。",
-    "enabled": true,
-    "provider": "auto",
+    "enabled": false,
+    "provider": "dashscope",
     "apiKey": "",
-    "baseUrl": "https://api.deepseek.com/v1/tools/asr",
-    "model": "",
+    "baseUrl": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+    "model": "qwen3-asr-flash",
     "timeoutMs": 90000,
     "maxSeconds": 120
   },

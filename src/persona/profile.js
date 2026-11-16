@@ -3,7 +3,7 @@
 // 持久化、接口校验和提示词只共享数据定义，不互相调用，避免保存时触发构造副作用。
 const IDENTITY_FIELDS = Object.freeze({
   name: { max: 40, fallback: '鲸鲸' },
-  job: { max: 80, fallback: '自由职业' },
+  job: { max: 80 },
   appearance: { max: 400 },
   personality: { max: 500 },
   background: { max: 500 },
@@ -24,7 +24,7 @@ function identityPatch(body = {}) {
 function customIdentityBlock(persona = {}) {
   return [
     '【当前基础人设】以下字段是当前设置；自定义提示词用于补充细节，冲突时以这些明确字段为准。',
-    `- 名字：${persona.name || '鲸鲸'}；年龄：${Number(persona.age) || 23}；职业：${persona.job || '自由职业'}。`,
+    `- 名字：${persona.name || '鲸鲸'}；年龄：${Number(persona.age) || 23}；职业：${persona.job || '未设定'}。`,
     ...['appearance', 'personality', 'background'].map((key, i) =>
       `- ${['外观', '性格', '背景'][i]}：${persona[key] || '未设定，由自定义补充决定'}。`),
   ].join('\n');

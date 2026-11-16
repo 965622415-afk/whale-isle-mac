@@ -84,3 +84,11 @@ dialog[data-dialog-state="closing"]::backdrop{animation:backdrop-exit .18s ease-
 html[data-motion="paused"] .signature-avatar,html[data-motion="paused"] .hero-whale-mark img{translate:none}
 html[data-motion="paused"] .motion-item{opacity:1!important;translate:none!important}
 @media(prefers-reduced-motion:reduce){.signature-avatar,.hero-whale-mark img{animation:none;translate:none}.button,.icon-button,.motion-control,summary{transition:none}dialog::backdrop{animation:none}::view-transition-old(root),::view-transition-new(root){animation:none}}
+.github-button{display:inline-flex;align-items:center;justify-content:center;gap:9px;min-height:40px;padding:6px 12px;border:1px solid var(--line);border-radius:24px;font-size:12px;font-weight:600;white-space:nowrap;color:var(--text);background:var(--bg)}
+.github-button:hover{border-color:var(--accent);background:var(--surface-raised)}
+.github-stars{border-left:1px solid var(--line);padding-left:9px;font-variant-numeric:tabular-nums}
+.star-prompt{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:22px 26px;margin:24px 0;border:1px solid var(--line);border-radius:20px;background:var(--surface)}
+.star-prompt strong{color:var(--text);font-size:16px}.star-prompt p{color:var(--muted);font-size:13px;margin:6px 0 0}.star-prompt .button{flex-shrink:0}
+.download-section .star-prompt{text-align:left;max-width:850px;margin:28px auto}
+@media(min-width:901px) and (max-width:1199px){.nav-links{gap:12px}.nav .brand-en{display:none}.nav-actions .motion-control span{display:none}}
+@media(max-width:600px){.nav-actions>.button.small{display:none}.github-button{gap:6px;padding:6px 9px;font-size:11px}.github-stars{padding-left:6px}.star-prompt{align-items:flex-start;flex-direction:column;padding:20px}.nav-actions .motion-control{display:none}}

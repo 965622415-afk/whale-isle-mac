@@ -33,9 +33,9 @@ test('清空自定义提示词能真的清掉（不会被空值清理吞掉）',
   assert.equal(cfg.persona.customPrompt, 'AAAA');
   personaStore.save(cfg, { customPrompt: '' });
   assert.equal(cfg.persona.customPrompt, '', '空字符串必须让 apply() 看到，才能清空');
-  // 落盘时不该留空串
+  // 必须保留清空标记，否则重启时基础配置会重新覆盖。
   const file = JSON.parse(fs.readFileSync(path.join(cfg.paths.dataDir, 'persona.json'), 'utf8'));
-  assert.ok(!('customPrompt' in file) || file.customPrompt !== '', '文件里别留空字符串');
+  assert.equal(file.customPrompt, '');
 });
 
 test('清空后能改回用控件（性格重新生效）', () => {

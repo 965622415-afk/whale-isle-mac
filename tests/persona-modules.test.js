@@ -26,7 +26,7 @@ test('人设字段共享校验，补充提示词不截断也不吞显式清空',
   const patch = profile.identityPatch({ name: '  小鱼  ', age: 999, job: '', appearance: '蓝'.repeat(450), customPrompt: '鲸'.repeat(18000) });
   assert.equal(patch.name, '小鱼');
   assert.equal(patch.age, 120);
-  assert.equal(patch.job, '自由职业');
+  assert.equal(patch.job, '');
   assert.equal(patch.appearance.length, 400);
   assert.equal(patch.customPrompt.length, 18000);
   assert.deepEqual(profile.identityPatch({ customPrompt: '' }), { customPrompt: '' });

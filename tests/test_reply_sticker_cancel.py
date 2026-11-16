@@ -31,6 +31,10 @@ class ReplyStickerCancelTests(unittest.TestCase):
         if kind == 'text':
             node = next(n for n in ast.walk(tree) if isinstance(n, ast.For)
                         and isinstance(n.iter, ast.Name) and n.iter.id == 'bubbles')
+        elif kind == 'rate':
+            node = next(n for n in ast.walk(tree) if isinstance(n, ast.If)
+                        and isinstance(n.test, ast.UnaryOp) and isinstance(n.test.operand, ast.Call)
+                        and isinstance(n.test.operand.func, ast.Attribute) and n.test.operand.func.attr == 'rate_guard')
         else:
             node = next(n for n in ast.walk(tree) if isinstance(n, ast.If)
                         and isinstance(n.test, ast.Call) and isinstance(n.test.func, ast.Attribute)
@@ -79,6 +83,13 @@ class ReplyStickerCancelTests(unittest.TestCase):
         self.env['sticker_config_now'].return_value = None
         self.assertFalse(self.env['cancel_reply_sticker'](self.item, 'peer-test'))
         self.http.assert_not_called()
+
+    def test_rate_limit_releases_reserved_sticker_without_sending(self):
+        self.env['rate_guard'] = Mock(return_value=False)
+        self.env['safe_name'] = lambda value: value
+        self.run_branch('rate')
+        self.http.assert_called_once()
+        self.env['send_text'].assert_not_called()
 
     def test_text_failure_without_sticker_never_calls_sticker_api(self):
         self.env['data'] = {}

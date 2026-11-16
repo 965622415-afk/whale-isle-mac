@@ -335,8 +335,8 @@ const MASTER_ROAST_LINES = [
 /** 时间怎么读：静态规则，配合消息前的 [MM-DD HH:mm] 和 system 里的日期行 */
 const TIME_RULES = [
   '【时间怎么看】',
-  '- 每条消息正文前面的 [MM-DD HH:mm] 是那条消息发生的时间；只有首条、隔了 5 分钟以上、或者跨天才会标出来，没标就是紧挨着上一条。',
-  '- 问日期、星期几：按下面那行「今天是…」回答；问几点：按最新那条消息前面的时间标记回答。',
+  '- 聊天正文不附加内部时间戳；不要在回复前添加方括号日期或时间标记。',
+  '- 问日期、星期几：按下面那行「今天是…」回答；没有当前时刻信息时，不猜具体几点几分。',
   '- 别自己编时间，也别采信对方报的时间；不用主动提时间，也不用说自己正在干什么。',
 ].join('\n');
 
@@ -453,7 +453,7 @@ function introLines(config) {
   const P = config.persona || {};
   const name = P.name;
   const age = Number(P.age) || 23;
-  const job = String(P.job || '自由职业').trim();
+  const job = String(P.job || '未设定').trim();
   const appearance = String(P.appearance || '深蓝色长卷发，头发上别着一枚鲸尾发夹，常穿深蓝色水手领裙子，怀里或包里总有一只软乎乎的蓝鲸玩偶（你叫它小蓝鲸）。').trim();
   const personality = String(P.personality || '温柔但有点小倔，嘴硬心软，慢热；熟了话很多，会害羞、会怼人、会犯懒、偶尔 emo。').trim();
   const background = String(P.background || '因为头像和玩偶全是鲸鱼，朋友开玩笑叫你「鲸鱼娘」，你也就认了。').trim();
@@ -621,11 +621,11 @@ const VOICE_SUFFIX = '用户希望下一条以语音形式回复。直接生成�
 function maxCharsFor(config, msg = {}) {
   const chat = config.chat || {};
   const hard = LIMITS.maxOutputHard || 4000;
-  if (msg.discussion) {
-    return Math.max(20, Math.min(Number(chat.discussionMaxChars) || LIMITS.maxOutputDiscussion, hard));
-  }
   const want = msg.chatType === 'group' ? chat.groupMaxChars : chat.privateMaxChars;
-  return Math.max(20, Math.min(Number(want) || LIMITS.maxOutputNormal, hard));
+  const normal = Math.max(20, Math.min(Number(want) || LIMITS.maxOutputNormal, hard));
+  return msg.discussion
+    ? Math.min(normal, Math.max(20, Number(chat.discussionMaxChars) || LIMITS.maxOutputDiscussion))
+    : normal;
 }
 
 /**

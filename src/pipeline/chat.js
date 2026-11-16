@@ -29,7 +29,7 @@ const { tagId, tagName, textMeta, urlHost } = require('../infra/privacy');
 const { saveSettings } = require('../infra/config');
 const time = require('../infra/time');
 const personaStore = require('../persona/store');
-const { sanitizeForModel, nameMatches } = require('../core/text');
+const { sanitizeForModel, nameMatches, stripInternalTimestamps } = require('../core/text');
 const { sendDenial } = require('../core/wechatSendPolicy');
 const trigger = require('../core/trigger');
 const { INSULT_RE, INSULT_LOOSE_RE } = require('../core/trigger');
@@ -1776,7 +1776,7 @@ class Bot {
   }
 
   finalize(decision, text, { error = false } = {}) {
-    text = String(text == null ? '' : text).trim();
+    text = stripInternalTimestamps(text);
     // 模型主动退场标记 [[silence:分钟]]：先解析并从正文剥掉，再走后面的格式清理。
     const silenceMark = stripSilenceMark(text);
     text = silenceMark.text;
@@ -1937,9 +1937,15 @@ class Bot {
     if (decision.action === 'command') return foundEmoji ? [text, foundEmoji] : [text];
     const maxBubbles = Math.max(1, Number(this.config.chat.maxBubbles) || 2);
     const hard = LIMITS.maxOutputHard || 4000;
+    const normalMaxChars = Math.max(20, Math.min(Number(isGroup ? this.config.chat.groupMaxChars : this.config.chat.privateMaxChars) || LIMITS.maxOutputNormal, hard));
     const maxChars = msg.discussion
-      ? Math.max(20, Math.min(Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion, hard))
-      : Math.max(20, Math.min(Number(isGroup ? this.config.chat.groupMaxChars : this.config.chat.privateMaxChars) || LIMITS.maxOutputNormal, hard));
+      ? Math.min(normalMaxChars, Math.max(20, Number(this.config.chat.discussionMaxChars) || LIMITS.maxOutputDiscussion))
+      : normalMaxChars;
+    // 字数设置约束整轮正文，不能因分句、多气泡或讨论模式而放大。
+    if (!decision.diaryExpanded && Array.from(text).length > maxChars) {
+      text = Array.from(text).slice(0, maxChars - 1).join('').trimEnd() + '…';
+      decision.finalText = text;
+    }
     const preferSeparate = Boolean(msg.separateRequested);
     let bubbles;
     if (decision.diaryExpanded) {

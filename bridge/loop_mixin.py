@@ -83,6 +83,27 @@ class LoopMixin:
             try:
                 ok = self.send_text(text, name, u)
                 save_state({'lastTs': G.time.time(), 'day': today, 'count': sent + (0 if ok is False else 1)})
+                if ok is True:
+                    # 回传失败只重试记账，不重发微信正文；相同 id 由内核去重。
+                    import uuid
+                    receipt = {'id': uuid.uuid4().hex, 'chat': u, 'text': text, 'group': bool(target.get('isGroup'))}
+                    headers = {'x-whale-bridge': '1', 'x-bot-token': self.token or ''}
+                    try:
+                        recorded = None
+                        for attempt in range(3):
+                            try:
+                                recorded = G.LOCAL_HTTP.post(base + '/api/care/sent', json=receipt, headers=headers, timeout=15)
+                                if recorded.ok and (recorded.json() or {}).get('ok'):
+                                    break
+                            except Exception:
+                                if attempt == 2:
+                                    raise
+                            if attempt < 2:
+                                G.time.sleep(0.5)
+                        if not recorded.ok or not (recorded.json() or {}).get('ok'):
+                            G.log_warn('主动搭话已发送，但写入上下文失败')
+                    except Exception as e:
+                        G.log_warn('主动搭话已发送，但写入上下文失败：type=%s detail=%s' % (type(e).__name__, repr(e)[:160]))
             except Exception as e:
                 G.log('主动搭话发送失败：', repr(e))
                 save_state({'lastTs': G.time.time(), 'day': today, 'count': sent})
@@ -125,6 +146,8 @@ class LoopMixin:
         """
         if G.uia_boot is None:
             return self._UIA_READY
+        if self.foreground_is_moments():
+            return {'ok': False, 'reason': 'moments_foreground'}
         prefer = int(self.ACCOUNT.get('hwnd') or 0) if self.ACCOUNT.get('verified') else 0
         now = G.time.time()
         if not force and now - self._UIA_READY['ts'] < 30:
@@ -304,7 +327,9 @@ class LoopMixin:
             try:
                 resting = False
                 uia_now = None
-                if not resting and G.SEND_STATE.get('active'):
+                if self.foreground_is_moments():
+                    uia_now = self.UIA_CACHE.get('u') is not None
+                elif not resting and G.SEND_STATE.get('active'):
                     G.log('心跳跳过预热（正在发送中）')
                     uia_now = self.UIA_CACHE.get('u') is not None
                 elif not resting:

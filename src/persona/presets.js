@@ -332,6 +332,17 @@ function updateFromConfig(config, id) {
   return Boolean(result.ok);
 }
 
+function resetMarketCopy(config, id) {
+  const key = String(id || '').trim();
+  if (!/^market-[a-z][a-z0-9-]{0,47}$/.test(key) || !marketPreset(config, key.slice(7) + '.persona.json'))
+    return { ok: false, error: '市场人设不存在或未启用' };
+  try {
+    const file = path.join(userDir(config), key + '.json');
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+    return { ok: true };
+  } catch (err) { return { ok: false, error: '删除本地副本失败：' + err.message }; }
+}
+
 /**
  * 删除预设。内置/市场写隐藏标记，自建物理删除；正在使用的预设拒绝删除。
  * @returns {{ok:boolean, error?:string, kind?:string, id?:string}}
@@ -399,6 +410,7 @@ function renamePreset(config, id, name) {
 /** 预设里允许写进人设的字段（不认识的字段忽略，避免带进乱七八糟的东西） */
 function toPatch(preset) {
   if (!preset) return null;
+  preset = require('./legacy').upgradeLegacyPersona(preset);
   const patch = {};
   const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
   // preset.name 是「这一版预设的标题」（如「鲸鲸 v1：像群友一样聊天」），
@@ -440,6 +452,7 @@ module.exports = {
   fromConfig,
   saveUser,
   updateFromConfig,
+  resetMarketCopy,
   removePreset,
   renamePreset,
   sourceOf,

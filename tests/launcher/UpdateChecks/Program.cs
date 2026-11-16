@@ -32,3 +32,16 @@ Check(UpdateManifestService.ReleaseWarning(null) == "", "无清单时没有警�
 Check(UpdateManifestService.Decide("4.0.8", hotfix, now) == UpdatePolicy.Force, "紧急热修只强制上一个发布版本");
 Check(UpdateManifestService.Decide("4.0.7", hotfix, now) == UpdatePolicy.Warn, "更老版本不被热修强制");
 Check(UpdateManifestService.Decide("4.0.8.1", hotfix, now) == UpdatePolicy.Ok, "已是最新版本不再强制");
+var dual = (UpdateManifest)parse.Invoke(null, new object[] { "{\"latest\":\"4.1.6.1\",\"epoch\":2,\"brand_latest\":\"1.0.0\",\"target\":\"1.0.0\",\"force\":false}" });
+Check(UpdateManifestService.HasUpdate("4.1.6", 0, dual), "旧轨道继续使用 latest");
+Check(UpdateManifestService.Resolve("4.1.6", 0, dual).Latest == "4.1.6.1", "旧客户端忽略新字段");
+Check(UpdateManifestService.HasUpdate("4.1.6.1", 1, dual), "跨代允许数字版本降低");
+Check(UpdateManifestService.Resolve("4.1.6.1", 1, dual).Latest == "1.0.0", "跨代展示与下载选择正式版");
+Check(!UpdateManifestService.HasUpdate("1.0.0", 2, dual), "同代正式版不被旧 latest 拉回");
+Check(UpdateManifestService.HasUpdate("0.9.0", 2, dual), "同代比较正式版本");
+Check(!UpdateManifestService.HasUpdate("1.0.1", 2, dual), "同代不降级");
+Check(!UpdateManifestService.HasUpdate("1.0.0", 3, dual), "拒绝旧代清单");
+Check(dual.Latest == "4.1.6.1", "选择轨道不污染原始缓存");
+Check(!UpdateManifestService.HasUpdate("1.0.0", 2, hotfix), "正式版拒绝不带代次的旧缓存");
+dual.Target = "1.0.1";
+Check(!UpdateManifestService.HasUpdate("4.1.6.1", 1, dual), "目标与展示版本冲突时不安装");

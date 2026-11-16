@@ -43,6 +43,7 @@ async function search(query, opts = {}) {
     ...opts,
     headers: { Authorization: 'Bearer ' + key, ...(opts.headers || {}) },
   });
+  if (opts.strictResponse && !Array.isArray(json?.results)) throw searchError('invalid_response');
   const rows = Array.isArray(json?.results) ? json.results : [];
   const fetchedAt = new Date().toISOString();
   return rows.map((row) => mapItem(row, fetchedAt)).filter(Boolean);

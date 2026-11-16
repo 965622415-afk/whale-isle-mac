@@ -118,6 +118,9 @@ class StickerMixin:
                             return G.sticker_result('failed', 'unable to bind the verified account window')
                         uia = getattr(current_gui, '_uia', None)
                         if uia is None:
+                            # 冷启动/驱动重建后缓存未初始化不等于不可用，先走正式获取入口。
+                            uia = current_gui._get_uia()
+                        if uia is None:
                             return G.sticker_result('failed', 'UIA target proof is unavailable; no OCR fallback')
                         search_keys = [chat_display_name] + [a for a in aliases if a and a != chat_display_name]
                         try:

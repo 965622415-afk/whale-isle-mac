@@ -69,6 +69,7 @@ async function search(query, opts = {}) {
   });
   const code = json?.Code;
   if (Number(code) !== 0) throw codeError(code, 200);
+  if (opts.strictResponse && !Array.isArray(json?.Data?.Items)) throw searchError('invalid_response');
   const rows = Array.isArray(json?.Data?.Items) ? json.Data.Items : [];
   const fetchedAt = new Date().toISOString();
   return rows.map((row) => mapItem(row, fetchedAt)).filter(Boolean);

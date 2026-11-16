@@ -245,7 +245,7 @@ jobs:
             --self-contained false `
             -p:PublishSingleFile=true `
             -p:Version=$env:version `
-            -p:FileVersion=$env:version.0 `
+            -p:FileVersion=$env:version `
             -o launcher/publish `
             --nologo
           if ($LASTEXITCODE -ne 0) { Write-Output '::error title=启动器发布失败::dotnet publish 退出码非 0'; exit 1 }
@@ -721,6 +721,12 @@ jobs:
           $manifestPath = 'artifacts/setup/release-manifest.json'
           $manifest = Get-Content 'release-manifest.json' -Raw -Encoding utf8 | ConvertFrom-Json
           $manifest.latest = $env:version
+          if ($manifest.legacy_latest) { $manifest.latest = $manifest.legacy_latest }
+          $pkg = Get-Content package.json -Raw -Encoding utf8 | ConvertFrom-Json
+          $epoch = if ($null -ne $pkg.updateEpoch) { [int]$pkg.updateEpoch } else { 0 }
+          $manifest | Add-Member -NotePropertyName epoch -NotePropertyValue $epoch -Force
+          $manifest | Add-Member -NotePropertyName brand_latest -NotePropertyValue $env:version -Force
+          $manifest | Add-Member -NotePropertyName target -NotePropertyValue $env:version -Force
           $manifest.released_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
           $manifest.manifest_version = [int]$manifest.manifest_version + 1
           $manifest.message = "鲸鲸 $env:version 已发布：下载安装包覆盖安装即可，data 与 config.json 不受影响。"

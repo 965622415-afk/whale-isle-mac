@@ -24,6 +24,8 @@ function makeConfig(overrides = {}) {
 
 function makeBot({ config = makeConfig(), llm, linkReader = null } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'whale-bot-'));
+  config.paths = { root: dir, dataDir: path.join(dir, 'data'), configFile: path.join(dir, 'config.json'), settingsFile: path.join(dir, 'data/settings.json') };
+  fs.writeFileSync(config.paths.configFile, JSON.stringify(config));
   const store = new Store({ file: path.join(dir, 'store.json'), limits: config.memory });
   const mockLlm = llm || { isMock: true, model: 'mock', reload() {}, describe() { return {}; } };
   const bot = new Bot({ config, store, llm: mockLlm, logger: null, mockChunkDelayMs: 0, linkReader });
@@ -57,6 +59,20 @@ const groupMsg = (text, extra = {}) => ({
   text,
   chatTitle: '深海鱼塘',
   ...extra,
+});
+
+test('讨论和多分句回复仍遵守私聊群聊整轮字数设置', async () => {
+  const config = makeConfig({ chat: { privateMaxChars: 40, groupMaxChars: 20, discussionMaxChars: 400, emojiChance: 0 } });
+  config.persona.emojiChance = 0;
+  const { bot, cleanup } = makeBot({ config });
+  try {
+    for (const [message, limit] of [[privateMsg, 40], [groupMsg, 20]]) {
+      const decision = await bot.decide(message('为什么今天你觉得这么开心'));
+      decision.msg.discussion = true;
+      const bubbles = bot.finalize(decision, '这是一段非常长的回答'.repeat(30) + '，' + '还有很多补充解释'.repeat(30));
+      assert.ok(Array.from(bubbles.join('')).length <= limit, bubbles.join(''));
+    }
+  } finally { cleanup(); }
 });
 
 test('私聊一定会回复，并把回复写进记忆', async () => {

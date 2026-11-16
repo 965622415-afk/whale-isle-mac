@@ -5,6 +5,14 @@ import engine as G
 
 class WindowMixin:
 
+    def foreground_is_moments(self):
+        # 仅查询原生窗口类，不遍历 UIA；朋友圈切页时控件树可能正被销毁。
+        try:
+            import win32gui
+            return win32gui.GetClassName(win32gui.GetForegroundWindow()) == 'mmui::SNSWindow'
+        except Exception:
+            return False
+
     def foreground_is_fullscreen(self):
         """前台是不是「真全屏」程序（全屏游戏、全屏视频）。
 

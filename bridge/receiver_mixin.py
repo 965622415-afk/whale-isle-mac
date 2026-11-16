@@ -763,7 +763,8 @@ class ReceiverMixin:
                 headers = {'x-whale-bridge': '1'}
                 if self.token:
                     headers['x-bot-token'] = self.token
-                r = G.LOCAL_HTTP.post(self.bot_url, json=payload, headers=headers, timeout=120)
+                # 模型生成耗时由内核控制，桥接不再用 120 秒读超时截断本轮回复。
+                r = G.LOCAL_HTTP.post(self.bot_url, json=payload, headers=headers, timeout=(10, None))
                 if r.status_code != 200:
                     G.CONN_STATE['ok'] = False
                     hint = '桥接 token 不匹配，请核对配置并重启桥接' if r.status_code in (401, 403) else '请查看内核诊断日志'
@@ -816,6 +817,8 @@ class ReceiverMixin:
                 bubbles = [str(data['reply'])]
             mention = str(data.get('mention') or '').strip()
             if not G.rate_guard(username):
+                if isinstance(data.get('sticker'), dict):
+                    self.cancel_reply_sticker(data['sticker'], username)
                 G.log('这一分钟回太多了，先停一下：', G.safe_name(target))
                 return
             if data.get('stickerOnly') is True:

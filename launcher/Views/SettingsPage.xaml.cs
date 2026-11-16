@@ -52,6 +52,8 @@ namespace WhaleLauncher.Views
         private readonly List<Action> _refreshBudgetHints = new List<Action>();
         private long _configurationRevision;
         private readonly Dictionary<string, Action<JsonElement>> _loaders = new Dictionary<string, Action<JsonElement>>();
+        private readonly Dictionary<string, Func<Task<bool>>> _apiFieldSaves = new Dictionary<string, Func<Task<bool>>>();
+        private readonly HashSet<string> _dirtyFields = new HashSet<string>();
         private Action<JsonElement, Dictionary<string, JsonElement>> _loadModel;
         private Action<JsonElement> _loadVision;
         private TextBlock _adminSpellStatus;
@@ -476,14 +478,9 @@ namespace WhaleLauncher.Views
 
             pick.Click += (_, __) =>
             {
-                var dlg = new OpenFileDialog
-                {
-                    Title = "选择背景图片",
-                    Filter = "图片文件|*.jpg;*.jpeg;*.png;*.bmp|所有文件|*.*",
-                    CheckFileExists = true
-                };
-                if (dlg.ShowDialog() != true) return;
-                if (Appearance.TrySetBackdrop(dlg.FileName, out var err))
+                var file = AppFilePicker.Open("选择背景图片", ".jpg;.jpeg;.png;.bmp");
+                if (file == null) return;
+                if (Appearance.TrySetBackdrop(file, out var err))
                 {
                     hint.Text = "已应用。";
                     hint.Foreground = (Brush)FindResource("Dim");
@@ -581,11 +578,8 @@ namespace WhaleLauncher.Views
 
             pick.Click += (_, __) =>
             {
-                var dlg = new ColorPickerWindow(label, Appearance.EffectiveColor(kind), (Style)FindResource("BudgetSlider"))
-                {
-                    Owner = Window.GetWindow(this),
-                };
-                if (dlg.ShowDialog() == true)
+                var dlg = new ColorPickerWindow(label, Appearance.EffectiveColor(kind), (Style)FindResource("BudgetSlider"));
+                if (AppDialog.ShowContent("调色 · " + label, dlg, 430, "确定", "取消"))
                     Appearance.SetPaletteColor(kind, Appearance.ToHex(dlg.SelectedColor));
             };
             auto.Click += (_, __) => Appearance.ClearPaletteColor(kind);
@@ -828,11 +822,13 @@ namespace WhaleLauncher.Views
                         if (_loading || pwd.Password.Length == 0) return;
                         await saves.SaveAsync();
                     };
+                    _apiFieldSaves[f.Path] = async () => pwd.Password.Length == 0 || (await saves.SaveAsync()).Ok;
                     return Row(f.Label, pwd, f.Hint, false, labelWidth);
                 }
                 case "multiline":
                 {
                     var box = new TextBox { AcceptsReturn = true, MinHeight = 56, TextWrapping = TextWrapping.Wrap, VerticalScrollBarVisibility = ScrollBarVisibility.Auto };
+                    box.TextChanged += (s, e) => { if (!_loading) { _dirtyFields.Add(f.Path); _configurationRevision++; } };
                     box.LostFocus += async (s, e) =>
                     {
                         if (_loading) return;
@@ -841,7 +837,7 @@ namespace WhaleLauncher.Views
                     };
                     _loaders[f.Path] = v =>
                     {
-                        if (box.IsKeyboardFocusWithin) return;   // 正在编辑就不覆盖（M30）
+                        if (box.IsKeyboardFocusWithin || _dirtyFields.Contains(f.Path)) return;
                         _loading = true;
                         box.Text = v.ValueKind == JsonValueKind.Array
                             ? string.Join("\n", v.EnumerateArray().Select(x => x.ToString()))
@@ -896,9 +892,23 @@ namespace WhaleLauncher.Views
                         if (!double.IsNaN(f.Max) && v > f.Max) { StatusText.Text = f.Label + " 不能大于 " + f.Max; return; }
                         await PatchAsync(f.Path, v);
                     };
+                    box.TextChanged += (s, e) => { if (!_loading) { _dirtyFields.Add(f.Path); _configurationRevision++; } };
+                    _apiFieldSaves[f.Path] = async () =>
+                    {
+                        if (!_dirtyFields.Contains(f.Path)) return true;
+                        if (box is NumberField nfield)
+                        {
+                            if (!nfield.TryRead(out var value)) { StatusText.Text = nfield.ErrorText; return false; }
+                            return await PatchAsync(f.Path, value);
+                        }
+                        if (!double.TryParse(box.Text, out var number) || !double.IsFinite(number)
+                            || (!double.IsNaN(f.Min) && number < f.Min) || (!double.IsNaN(f.Max) && number > f.Max))
+                        { StatusText.Text = f.Label + "：数值无效"; return false; }
+                        return await PatchAsync(f.Path, number);
+                    };
                     _loaders[f.Path] = v =>
                     {
-                        if (box.IsKeyboardFocusWithin) return;   // 正在编辑就不覆盖（M30）
+                        if (box.IsKeyboardFocusWithin || _dirtyFields.Contains(f.Path)) return;
                         _loading = true;
                         box.Text = v.ValueKind == JsonValueKind.Number
                             ? (f.IsInt ? Math.Round(v.GetDouble()).ToString() : v.GetDouble().ToString("0.###"))
@@ -926,22 +936,30 @@ namespace WhaleLauncher.Views
                         Margin = new Thickness(12, 0, 0, 0)
                     };
                     var debounce = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
+                    var sliderPending = false;
+                    var sliderRevision = 0;
                     debounce.Tick += async (s, e) =>
                     {
                         debounce.Stop();
                         if (_loading) return;
-                        await PatchAsync(f.Path, Math.Round(slider.Value));
+                        var revision = sliderRevision;
+                        if (await PatchAsync(f.Path, Math.Round(slider.Value)) && revision == sliderRevision)
+                            sliderPending = false;
                     };
                     void ShowValue() => readout.Text = Math.Round(slider.Value) + (f.Unit ?? "");
                     slider.ValueChanged += (s, e) =>
                     {
                         ShowValue();
                         if (_loading) return;
+                        sliderPending = true;
+                        sliderRevision++;
+                        _configurationRevision++;
                         debounce.Stop();
                         debounce.Start();
                     };
                     _loaders[f.Path] = v =>
                     {
+                        if (sliderPending) return;
                         _loading = true;
                         if (v.ValueKind == JsonValueKind.Number)
                         {
@@ -1226,6 +1244,8 @@ namespace WhaleLauncher.Views
                 default:
                 {
                     var box = new TextBox();
+                    box.TextChanged += (s, e) => { if (!_loading) { _dirtyFields.Add(f.Path); _configurationRevision++; } };
+                    _apiFieldSaves[f.Path] = async () => !_dirtyFields.Contains(f.Path) || await PatchAsync(f.Path, (box.Text ?? "").Trim());
                     box.LostFocus += async (s, e) =>
                     {
                         if (_loading) return;
@@ -1233,7 +1253,7 @@ namespace WhaleLauncher.Views
                     };
                     _loaders[f.Path] = v =>
                     {
-                        if (box.IsKeyboardFocusWithin) return;   // 正在编辑就不覆盖（M30）
+                        if (box.IsKeyboardFocusWithin || _dirtyFields.Contains(f.Path)) return;
                         _loading = true;
                         box.Text = v.ValueKind == JsonValueKind.String ? (v.GetString() ?? "")
                             : (v.ValueKind == JsonValueKind.Array ? string.Join(",", v.EnumerateArray().Select(x => x.ToString())) : "");
@@ -1265,14 +1285,55 @@ namespace WhaleLauncher.Views
         private async Task<ApiResult> PatchResultAsync(string path, Func<object> build, bool secret = false)
         {
             _configurationRevision++;
+            var revision = _configurationRevision;
             var generation = _pageLifetime.Capture();
             var res = secret ? await _saver.SaveSecretAsync(path, () => (string)build())
                 : await _saver.SaveAsync(() => new Dictionary<string, object> { [path] = build() });
+            if (res.Ok && revision == _configurationRevision) _dirtyFields.Remove(path);
             if (_pageLifetime.IsCurrent(generation))
                 StatusText.Text = res.Ok
                     ? path + " 已保存 " + DateTime.Now.ToString("HH:mm:ss")
                     : path + " 保存失败：" + Api.Message(res);
             return res;
+        }
+
+        private void AddApiProbe(StackPanel panel, string provider, string caption)
+        {
+            var button = new Button { Content = caption, Style = (Style)FindResource("Ghost"),
+                HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 8, 0, 0) };
+            var result = new TextBlock { Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap };
+            panel.Children.Add(button);
+            panel.Children.Add(result);
+            button.Click += async (_, __) =>
+            {
+                if (!_sup.NodeRunning) { result.Text = "请先启动内核；离线只支持保存配置。"; return; }
+                if (!AppDialog.Confirm(Window.GetWindow(this),
+                    "将保存当前接口设置并调用服务商，可能产生少量费用。语音测试会上传你选择的音频，不会发送微信消息。",
+                    "测试连接", okText: "继续测试")) return;
+                button.IsEnabled = false;
+                var generation = _pageLifetime.Capture();
+                try
+                {
+                    var prefix = provider == "voice" ? "voice." : "websearch." + provider + ".";
+                    foreach (var saveField in _apiFieldSaves.Where(x => x.Key.StartsWith(prefix, StringComparison.Ordinal)).Select(x => x.Value).ToArray())
+                        if (!await saveField()) { result.Text = "配置未保存，请先修正输入或查看保存失败原因。"; return; }
+                    await _saver.FlushAsync();
+                    var body = new Dictionary<string, object> { ["provider"] = provider };
+                    if (provider == "voice")
+                    {
+                        var file = AppFilePicker.Open("选择有清晰人声的短音频（最多 2 MiB）", ".wav");
+                        if (file == null) { result.Text = "已取消测试。"; return; }
+                        if (new FileInfo(file).Length > 2 * 1024 * 1024) { result.Text = "音频超过 2 MiB，请选择更短的 WAV。"; return; }
+                        body["audio"] = Convert.ToBase64String(await File.ReadAllBytesAsync(file));
+                    }
+                    result.Text = "正在调用服务商…";
+                    var response = await Api.PostJson(_sup.Url, "/api/settings/test-service", body, 45);
+                    if (!_pageLifetime.IsCurrent(generation)) return;
+                    result.Text = response.Ok ? response.Str("message") + " " + response.Str("sample") : "测试失败：" + Api.Message(response);
+                }
+                catch (Exception ex) { if (_pageLifetime.IsCurrent(generation)) result.Text = "测试失败：" + Api.FriendlyError(ex); }
+                finally { button.IsEnabled = true; }
+            };
         }
 
         private sealed class ModelSaveSnapshot
@@ -1836,9 +1897,17 @@ namespace WhaleLauncher.Views
             };
             test.Click += async (s, e) =>
             {
-                chatResult.Text = "正在测…";
-                    var res = await Api.PostJson(_sup.Url, "/api/settings/test", ModelRequest());
-                chatResult.Text = res.Ok ? "连通正常。" : "测试没通过：" + Api.Message(res);
+                if (!_sup.NodeRunning) { chatResult.Text = "请先启动内核，再测试连接。"; return; }
+                test.IsEnabled = false;
+                try
+                {
+                    chatResult.Text = "正在保存并测试…";
+                    var saved = await chatSaves.SaveAsync();
+                    if (!saved.Ok) { chatResult.Text = "保存失败：" + Api.Message(saved); return; }
+                    var res = await Api.PostJson(_sup.Url, "/api/settings/test", new { }, 60);
+                    chatResult.Text = res.Ok ? "模型调用成功。" : "测试没通过：" + Api.Message(res);
+                }
+                finally { test.IsEnabled = true; }
             };
 
             // ── 看图面板 ────────────────────────────────────────
@@ -1937,9 +2006,10 @@ namespace WhaleLauncher.Views
             visionUrl.LostFocus += async (s, e) => await AutoSaveVisionAsync();
             vtest.Click += async (s, e) =>
             {
+                if (!_sup.NodeRunning) { visionResult.Text = "请先启动内核，再测试连接。"; return; }
                 visionResult.Text = "正在测…";
                 if (!await SaveVisionAsync("")) return;      // 先落盘，测的就是刚才填的模型/Key
-                var res = await Api.Post(_sup.Url, "/api/vision/test", "{}");
+                var res = await Api.Post(_sup.Url, "/api/vision/test", "{}", 60);
                 visionResult.Text = res.Ok ? "看图通了，它说：" + res.Str("sample") : "没通：" + Api.Message(res);
             };
 
@@ -1953,6 +2023,7 @@ namespace WhaleLauncher.Views
             };
             voicePanel.Children.Add(voiceHint);
 
+            var voiceBody = new StackPanel { Visibility = Visibility.Collapsed };
             var voiceSwitch = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
             voiceSwitch.Click += async (s, e) =>
             {
@@ -1974,6 +2045,7 @@ namespace WhaleLauncher.Views
                     _loading = false;
                     return;
                 }
+                voiceBody.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
                 if (!on)
                 {
                     var cleared = await _saver.ClearSecretsAsync(new[] { "voice.apiKey" });
@@ -1987,10 +2059,12 @@ namespace WhaleLauncher.Views
                 if (voiceSwitch.IsKeyboardFocusWithin) return;
                 _loading = true;
                 voiceSwitch.IsChecked = v.ValueKind == JsonValueKind.True;
+                voiceBody.Visibility = voiceSwitch.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
                 _loading = false;
             };
             voicePanel.Children.Add(Row("启用语音识别", voiceSwitch,
                 "关闭后不下载语音、不请求 ASR，并删除已保存的语音 Key。", false, ModelLabel));
+            voicePanel.Children.Add(voiceBody);
 
             var voiceProvider = new ComboBox { Height = 28, DisplayMemberPath = "Label", MinWidth = 320, HorizontalAlignment = HorizontalAlignment.Left };
             var voiceModeHint = new TextBlock { Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 6) };
@@ -2003,14 +2077,14 @@ namespace WhaleLauncher.Views
             };
             voiceProvider.ItemsSource = voiceProviderChoices;
             voiceProvider.SelectedItem = voiceProviderChoices[0];
-            voicePanel.Children.Add(Row("语音服务", voiceProvider, "", false, ModelLabel));
-            voicePanel.Children.Add(voiceModeHint);
-            voicePanel.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；同源地址可复用 DeepSeek Key" }, false, ModelLabel));
+            voiceBody.Children.Add(Row("语音服务", voiceProvider, "", false, ModelLabel));
+            voiceBody.Children.Add(voiceModeHint);
+            voiceBody.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；同源地址可复用服务商 Key" }, false, ModelLabel));
             var voiceBaseRow = BuildField(new FieldSpec { Path = "voice.baseUrl", Label = "接口地址", Kind = "text" }, false, ModelLabel);
             var voiceModelRow = BuildField(new FieldSpec { Path = "voice.model", Label = "语音模型", Kind = "text" }, false, ModelLabel);
-            voicePanel.Children.Add(voiceBaseRow);
-            voicePanel.Children.Add(voiceModelRow);
-            voicePanel.Children.Add(TwoCol(
+            voiceBody.Children.Add(voiceBaseRow);
+            voiceBody.Children.Add(voiceModelRow);
+            voiceBody.Children.Add(TwoCol(
                 BuildField(new FieldSpec { Path = "voice.timeoutMs", Label = "识别超时(ms)", Kind = "num", Min = 1000, Max = 300000 }, true),
                 BuildField(new FieldSpec { Path = "voice.maxSeconds", Label = "最长语音(秒)", Kind = "num", Min = 1, Max = 600 }, true)));
 
@@ -2056,6 +2130,7 @@ namespace WhaleLauncher.Views
                 PaintVoiceMode();
             };
             PaintVoiceMode();
+            AddApiProbe(voiceBody, "voice", "测试语音识别（选择 WAV）");
             // ── 搜索：一个总开关；开启后才出现“添加 API” ──────────
             var apiEnabled = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
             searchPanel.Children.Add(Row("启用搜索 API", apiEnabled,
@@ -2100,6 +2175,7 @@ namespace WhaleLauncher.Views
                 head.Children.Add(caption);
                 panel.Children.Add(head);
                 foreach (var field in fields) panel.Children.Add(field);
+                AddApiProbe(panel, key, "测试连接");
 
                 remove.Click += async (s, e) =>
                 {
