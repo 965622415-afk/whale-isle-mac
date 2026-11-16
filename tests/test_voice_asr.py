@@ -4,6 +4,8 @@ import importlib.util
 import io
 import json
 import unittest
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest import mock
 
@@ -35,7 +37,7 @@ class VoiceAsrTests(unittest.TestCase):
             calls.append((req, timeout))
             return FakeResponse({"text": "你好", "duration_ms": 1200})
 
-        with mock.patch("urllib.request.urlopen", urlopen):
+        with mock.patch.object(voice, "_open_asr", urlopen):
             text = voice.asr_transcribe(
                 b"RIFFfakewav", "sk-test", "", "https://api.deepseek.com/v1/tools/asr", 30, "auto"
             )
@@ -56,7 +58,7 @@ class VoiceAsrTests(unittest.TestCase):
             calls.append(req)
             return FakeResponse({"output": {"choices": [{"message": {"content": [{"text": "百炼结果"}]}}]}})
 
-        with mock.patch("urllib.request.urlopen", urlopen):
+        with mock.patch.object(voice, "_open_asr", urlopen):
             text = voice.asr_transcribe(
                 b"wav", "dash-key", "qwen3-asr-flash",
                 "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
@@ -77,6 +79,43 @@ class VoiceAsrTests(unittest.TestCase):
     def test_missing_key_fails_before_request(self):
         with self.assertRaises(RuntimeError):
             voice.asr_transcribe(b"wav", "", "", "https://api.deepseek.com/v1/tools/asr", 30, "deepseek")
+
+    def test_redirect_does_not_forward_audio_or_authorization(self):
+        calls = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                calls.append(self.path)
+                self.rfile.read(int(self.headers.get('Content-Length', 0)))
+                self.send_response(302)
+                self.send_header('Location', '/key-sink')
+                self.end_headers()
+
+            def do_GET(self):
+                calls.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        import urllib.request
+        import urllib.error
+        server = HTTPServer(('127.0.0.1', 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            req = urllib.request.Request('http://127.0.0.1:%d/asr' % server.server_port,
+                                         data=b'fixture-audio', headers={'Authorization': 'Bearer unit-only'})
+            with self.assertRaises(urllib.error.HTTPError) as error:
+                voice._open_asr(req, timeout=3)
+            self.assertEqual(error.exception.code, 302)
+            error.exception.close()
+            self.assertEqual(calls, ['/asr'])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=3)
 
 
 if __name__ == "__main__":

@@ -204,10 +204,11 @@ class Bot {
     this.now = now;
     this.rng = rng;
     this.mockChunkDelayMs = mockChunkDelayMs;
-    this.linkReader = linkReader || ((url) => links.describeLink(url, {
+    this.linkReader = linkReader || ((url, { signal } = {}) => links.describeLink(url, {
       timeoutMs: (config.links && config.links.timeoutMs) || 6000,
       cacheMinutes: (config.links && config.links.cacheMinutes) || 60,
       allowPrivate: Boolean(config.links && config.links.allowPrivate),
+      signal,
     }));
     this.calibration = calibration || null;
     // 朋友圈快照：只在主人私聊问到朋友圈时读取，不参与普通记忆。
@@ -2017,8 +2018,18 @@ class Bot {
 
   /** 读一个链接并记账；失败也返回一句说明，绝不把异常抛给主流程 */
   async readLink(url, key) {
+    const controller = new AbortController();
+    const budget = Math.max(1, Math.min(60000, Number(this.config.links?.timeoutMs) || 6000));
+    let timer;
     try {
-      const info = await this.linkReader(url);
+      this.logger?.info(`[link] stage=start host=${urlHost(url)} budgetMs=${budget}`);
+      const info = await Promise.race([
+        Promise.resolve().then(() => this.linkReader(url, { signal: controller.signal })),
+        new Promise(resolve => { timer = setTimeout(() => {
+          resolve({ ok: false, url, error: 'timeout' });
+          controller.abort();
+        }, budget); }),
+      ]);
       const text = links.formatForPrompt(info);
       this.logger && this.logger.info(`读取链接：host=${urlHost(url)} → ${info && info.ok ? 'ok' : (info && info.error) || 'failed'}`);
       const title = String((info && (info.title || info.site)) || '').slice(0, 60);
@@ -2030,8 +2041,12 @@ class Bot {
       return text;
     } catch (err) {
       this.logger && this.logger.warn('读取链接失败：' + describeError(err));
-      this.store.appendEvent(key, { type: 'link', detail: url.slice(0, 120), status: 'failed' });
+      try { this.store.appendEvent(key, { type: 'link', detail: url.slice(0, 120), status: 'failed' }); }
+      catch (recordErr) { this.logger?.warn('链接失败记录未写入：' + describeError(recordErr)); }
       return `对方发了一个链接（${url}），但读取失败。`;
+    } finally {
+      clearTimeout(timer);
+      controller.abort();
     }
   }
 

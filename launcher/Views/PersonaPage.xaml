@@ -49,14 +49,17 @@
                         <TextBlock Text="这些基础字段定义她是谁。自定义内容用于补充，冲突时以当前基础字段为准。" Style="{StaticResource Small}" TextWrapping="Wrap" Margin="0,6,0,12" />
                         <Grid>
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="110" /></Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,12,0">
+                            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                            <Grid Margin="0,0,12,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                                 <Label Content="名字" Target="{Binding ElementName=TxtName}" />
-                                <TextBox x:Name="TxtName" LostFocus="OnFieldLostFocus" AutomationProperties.Name="名字" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1">
-                                <Label Content="年龄" Target="{Binding ElementName=TxtAge}" />
-                                <ui:NumberField x:Name="TxtAge" Minimum="1" Maximum="120" Fallback="23" Label="年龄" LostFocus="OnFieldLostFocus" />
-                            </StackPanel>
+                                <TextBlock Grid.Column="1" Text="请务必与当前登录微信账号的昵称保持一致，避免群聊中因名称识别不一致而漏回消息。"
+                                           Style="{StaticResource Small}" Foreground="{DynamicResource Bad}" TextWrapping="Wrap"
+                                           VerticalAlignment="Center" Margin="10,0,0,0" />
+                            </Grid>
+                            <TextBox Grid.Row="1" x:Name="TxtName" Margin="0,0,12,0" LostFocus="OnFieldLostFocus" AutomationProperties.Name="名字" />
+                            <Label Grid.Column="1" Content="年龄" Target="{Binding ElementName=TxtAge}" VerticalAlignment="Center" />
+                            <ui:NumberField Grid.Row="1" Grid.Column="1" x:Name="TxtAge" Minimum="1" Maximum="120" Fallback="23" Label="年龄" LostFocus="OnFieldLostFocus" />
                         </Grid>
                         <Label Content="职业" Target="{Binding ElementName=TxtJob}" Margin="0,8,0,0" />
                         <TextBox x:Name="TxtJob" LostFocus="OnFieldLostFocus" AutomationProperties.Name="职业" />

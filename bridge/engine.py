@@ -74,7 +74,7 @@ from bridge_log import (log, log_debug, log_warn, log_error, boot, log_window_pr
 from guards import is_system_notice, duplicate_guard, rate_guard, set_system_senders
 import config as bridge_config
 from config import read_config, build_bot_url, wait_for_server as _wait_for_server, ensure_ffmpeg_env as _ensure_ffmpeg_env
-from voice import resolve_voice_key as _resolve_voice_key, asr_transcribe, clean_transcript
+from voice import resolve_voice_key as _resolve_voice_key, resolve_voice_config, asr_transcribe, clean_transcript
 bridge_log.configure(log_file=LOG_FILE, boot_log=os.path.join(ROOT, 'data', 'bridge-boot.log'), level=LOG_LEVEL)
 bridge_config.configure(ROOT, CONFIG_PATH)
 ONLY_CHATS = []
@@ -175,11 +175,21 @@ def log_throttled(key, *args, ttl=600, emit=None):
     bounded_log(_THROTTLE_LOG, key, *args, ttl=ttl, emit=emit or log,
                 folded=log, clock=getattr(time, 'monotonic', time.time))
 
+def voice_runtime(cfg=None):
+    current = CURRENT_CONFIG if cfg is None else cfg
+    resolved = resolve_voice_config(current, ROOT)
+    snapshot = bridge_config.runtime_snapshot(dict(current, voice=resolved))['values']
+    values = {k: v for k, v in snapshot.items() if k.startswith('VOICE_')}
+    values['VOICE_API_KEY'] = resolved.get('apiKey') or ''
+    values['VOICE_SUPPORTED'] = resolved.get('supported', True)
+    return values
+
+
 def _publish_runtime_config(cfg, snapshot):
     global CURRENT_CONFIG, CONFIG_SNAPSHOT
     values = dict(snapshot['values'])
-    VOICE_BASE_URL = values['VOICE_BASE_URL']
-    values['VOICE_API_KEY'] = _resolve_voice_key(cfg, VOICE_BASE_URL, ROOT)
+    resolved = voice_runtime(cfg)
+    values.update(resolved)
     values['SYSTEM_SENDER_NAMES'] = set(BASE_SYSTEM_SENDERS) | set(snapshot['ignoreSenders'])
     # Resolve all derived values before publishing: a failed read/parse keeps
     # the previous coherent configuration rather than half-updated globals.

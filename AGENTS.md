@@ -59,6 +59,7 @@ Copy-Item launcher/publish/WhaleLauncher.exe .\WhaleLauncher.exe -Force
 
 ## 4. 协作方式
 
+- 每轮修改开始及交付前，先核对 GitHub 最新 main 和待合并 PR，避免覆盖其他协作者更新；本地未提交修改先保留并比较，不直接覆盖。
 - 不直接 push `main`：改分支 → PR → CI 绿了再合并。
 - 提交信息按 `CONTRIBUTING.md` 第三节（新增 / 改进 / 修复 / 其他 四段），不再另设规范副本。
 - 用户可见行为变了，`docs/CHANGELOG.md` 补一段，版本规则见第 5 节。

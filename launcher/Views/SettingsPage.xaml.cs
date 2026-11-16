@@ -2019,7 +2019,7 @@ namespace WhaleLauncher.Views
                 Style = (Style)FindResource("Small"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 8),
-                Text = "接收微信语音并识别成文字；发送语音请使用工作台「语音发送」。",
+                Text = "接收微信语音并识别成文字；默认跟随聊天服务和 Key，按服务商音频用量计费。发送语音请使用工作台「语音发送」。",
             };
             voicePanel.Children.Add(voiceHint);
 
@@ -2030,7 +2030,7 @@ namespace WhaleLauncher.Views
                 if (_loading) return;
                 var on = voiceSwitch.IsChecked == true;
                 if (!on && !AppDialog.Confirm(Window.GetWindow(this),
-                    "关闭语音识别会同时删除已保存的语音接口 Key。\n\n下次开启需要重新填写。继续吗？",
+                    "关闭语音识别会删除专用语音 Key，聊天 Key 保留。\n\n跟随模式下重新开启即可沿用聊天 Key；手动模式需要重新填写专用 Key。继续吗？",
                     "关闭语音识别", okText: "关闭并删除"))
                 {
                     _loading = true;
@@ -2063,13 +2063,14 @@ namespace WhaleLauncher.Views
                 _loading = false;
             };
             voicePanel.Children.Add(Row("启用语音识别", voiceSwitch,
-                "关闭后不下载语音、不请求 ASR，并删除已保存的语音 Key。", false, ModelLabel));
+                "关闭后不下载语音、不请求 ASR，并删除专用语音 Key；不会删除聊天 Key。", false, ModelLabel));
             voicePanel.Children.Add(voiceBody);
 
             var voiceProvider = new ComboBox { Height = 28, DisplayMemberPath = "Label", MinWidth = 320, HorizontalAlignment = HorizontalAlignment.Left };
             var voiceModeHint = new TextBlock { Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 6) };
             var voiceProviderChoices = new List<ProviderItem>
             {
+                new ProviderItem { Key = "follow", Label = "跟随主模型（默认，共用聊天 Key）" },
                 new ProviderItem { Key = "auto", Label = "自动（按接口地址判断）" },
                 new ProviderItem { Key = "deepseek", Label = "DeepSeek 语音识别" },
                 new ProviderItem { Key = "dashscope", Label = "阿里云百炼 qwen3-asr-flash" },
@@ -2079,21 +2080,27 @@ namespace WhaleLauncher.Views
             voiceProvider.SelectedItem = voiceProviderChoices[0];
             voiceBody.Children.Add(Row("语音服务", voiceProvider, "", false, ModelLabel));
             voiceBody.Children.Add(voiceModeHint);
-            voiceBody.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；同源地址可复用服务商 Key" }, false, ModelLabel));
+            var voiceManual = new StackPanel();
+            voiceBody.Children.Add(voiceManual);
+            voiceManual.Children.Add(BuildField(new FieldSpec { Path = "voice.apiKey", Label = "语音接口 Key", Kind = "secret", Hint = "留空表示不改；同源地址可复用服务商 Key" }, false, ModelLabel));
             var voiceBaseRow = BuildField(new FieldSpec { Path = "voice.baseUrl", Label = "接口地址", Kind = "text" }, false, ModelLabel);
             var voiceModelRow = BuildField(new FieldSpec { Path = "voice.model", Label = "语音模型", Kind = "text" }, false, ModelLabel);
-            voiceBody.Children.Add(voiceBaseRow);
-            voiceBody.Children.Add(voiceModelRow);
+            voiceManual.Children.Add(voiceBaseRow);
+            voiceManual.Children.Add(voiceModelRow);
             voiceBody.Children.Add(TwoCol(
                 BuildField(new FieldSpec { Path = "voice.timeoutMs", Label = "识别超时(ms)", Kind = "num", Min = 1000, Max = 300000 }, true),
                 BuildField(new FieldSpec { Path = "voice.maxSeconds", Label = "最长语音(秒)", Kind = "num", Min = 1, Max = 600 }, true)));
 
-            string VoiceProviderKey() => (voiceProvider.SelectedItem as ProviderItem)?.Key ?? "auto";
+            string VoiceProviderKey() => (voiceProvider.SelectedItem as ProviderItem)?.Key ?? "follow";
             void PaintVoiceMode()
             {
                 var key = VoiceProviderKey();
+                voiceManual.Visibility = key == "follow" ? Visibility.Collapsed : Visibility.Visible;
+                voiceModeHint.SetResourceReference(TextBlock.ForegroundProperty, "Dim");
                 // 自动模式无法在这里完美判断地址，交给桥接；界面只给通用说明。
-                voiceModeHint.Text = key == "deepseek"
+                voiceModeHint.Text = key == "follow"
+                    ? "自动沿用聊天配置；已适配 DeepSeek 与千问官方语音识别。其他接口请手动指定语音服务。"
+                    : key == "deepseek"
                     ? "DeepSeek：POST /v1/tools/asr，最长 120 秒、8 MiB，自动识别语种，不支持流式。"
                     : key == "dashscope"
                         ? "阿里云百炼：multimodal-generation 接口，模型名默认 qwen3-asr-flash。"
@@ -2124,7 +2131,7 @@ namespace WhaleLauncher.Views
             {
                 if (voiceProvider.IsKeyboardFocusWithin) return;
                 _loading = true;
-                var key = v.ValueKind == JsonValueKind.String ? v.GetString() : "auto";
+                var key = v.ValueKind == JsonValueKind.String ? v.GetString() : "follow";
                 voiceProvider.SelectedItem = voiceProviderChoices.FirstOrDefault(x => x.Key == key) ?? voiceProviderChoices[0];
                 _loading = false;
                 PaintVoiceMode();
@@ -2138,12 +2145,16 @@ namespace WhaleLauncher.Views
 
             var apiBody = new StackPanel { Visibility = Visibility.Collapsed };
             searchPanel.Children.Add(apiBody);
+            var searchFollow = new CheckBox { VerticalAlignment = VerticalAlignment.Center };
+            var searchFollowHint = new TextBlock { Style = (Style)FindResource("Small"), TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 3, 0, 6) };
+            apiBody.Children.Add(Row("跟随主模型", searchFollow, "默认沿用聊天 Key；DeepSeek / 千问官方接口自动适配，失败回退本地搜索。", false, ModelLabel));
+            apiBody.Children.Add(searchFollowHint);
             apiBody.Children.Add(new TextBlock
             {
                 Style = (Style)FindResource("Small"),
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 6),
-                Text = "开启搜索 API 后先走已添加的 API；API 失败或没有结果时自动回退本地 Bing/360。关闭 API 时只走本地。",
+                Text = "跟随模式无需重复填写 Key，调用按服务商规则计费。关闭跟随后可手动添加搜索 API；失败或没有结果时回退本地 Bing/360。",
             });
 
             var apiAdd = new ComboBox { Height = 26, DisplayMemberPath = "Label", MinWidth = 220, HorizontalAlignment = HorizontalAlignment.Left };
@@ -2218,15 +2229,30 @@ namespace WhaleLauncher.Views
             void RefreshApiUi()
             {
                 var on = apiEnabled.IsChecked == true;
+                var manual = searchFollow.IsChecked != true;
                 apiBody.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
-                apiDeepseekRow.Visibility = on && apiProviders.Contains("deepseek") ? Visibility.Visible : Visibility.Collapsed;
-                apiZhihuRow.Visibility = on && apiProviders.Contains("zhihu") ? Visibility.Visible : Visibility.Collapsed;
+                apiDeepseekRow.Visibility = on && manual && apiProviders.Contains("deepseek") ? Visibility.Visible : Visibility.Collapsed;
+                apiZhihuRow.Visibility = on && manual && apiProviders.Contains("zhihu") ? Visibility.Visible : Visibility.Collapsed;
                 var available = apiChoices.Where(x => !apiProviders.Contains(x.Key)).ToList();
                 apiAdd.ItemsSource = available;
                 apiAdd.SelectedIndex = available.Count > 0 ? 0 : -1;
                 apiAddButton.IsEnabled = available.Count > 0;
-                apiAddRow.Visibility = on && available.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
+                apiAddRow.Visibility = on && manual && available.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
             }
+
+            searchFollow.Click += async (s, e) =>
+            {
+                if (_loading) return;
+                var on = searchFollow.IsChecked == true;
+                if (!await PatchAsync("websearch.api.followChat", on)) searchFollow.IsChecked = !on;
+                RefreshApiUi();
+            };
+            _loaders["websearch.api.followChat"] = v =>
+            {
+                if (searchFollow.IsKeyboardFocusWithin) return;
+                searchFollow.IsChecked = v.ValueKind == JsonValueKind.True;
+                RefreshApiUi();
+            };
 
             async Task<bool> SaveApiProvidersAsync()
             {
@@ -2391,6 +2417,15 @@ namespace WhaleLauncher.Views
 
             _loadVision = (set) =>
             {
+                if (set.ValueKind == JsonValueKind.Object && set.TryGetProperty("voice", out var voiceStatus) && VoiceProviderKey() == "follow")
+                {
+                    voiceModeHint.Text = JsonRead.Str(voiceStatus, "hint") +
+                        (voiceStatus.TryGetProperty("hasKey", out var hasVoiceKey) && hasVoiceKey.ValueKind == JsonValueKind.True ? " 已配置聊天 Key。" : " 当前没有可用的识别 Key。");
+                    voiceModeHint.SetResourceReference(TextBlock.ForegroundProperty,
+                        voiceStatus.TryGetProperty("supported", out var voiceSupported) && voiceSupported.ValueKind == JsonValueKind.False ? "Bad" : "Dim");
+                }
+                if (set.ValueKind == JsonValueKind.Object && set.TryGetProperty("search", out var searchStatus))
+                    searchFollowHint.Text = JsonRead.Str(searchStatus, "hint");
                 var v = set.ValueKind == JsonValueKind.Object && set.TryGetProperty("vision", out var vv) ? vv : default;
                 var curModel = JsonRead.Str(v, "model");
                 var manual = v.ValueKind == JsonValueKind.Object && v.TryGetProperty("manual", out var mf) && mf.ValueKind == JsonValueKind.True;
@@ -2400,7 +2435,11 @@ namespace WhaleLauncher.Views
                     var masked = v.TryGetProperty("keyMasked", out var km) && km.ValueKind == JsonValueKind.String ? km.GetString() : "";
                     var follow = manual ? "" : "（自动）";
                     visionHint.Text = (configured ? "已配置：" + masked : "没配置。选「自动跟随」就用聊天那把 Key；本机/内网看图服务可以留空。")
-                        + (curModel.Length > 0 ? " 当前看图模型：" + curModel + follow : "");
+                        + (curModel.Length > 0 ? " 当前看图模型：" + curModel + follow : "")
+                        + " " + JsonRead.Str(v, "hint");
+                    visionHint.SetResourceReference(TextBlock.ForegroundProperty,
+                        v.TryGetProperty("supported", out var visionSupported) && visionSupported.ValueKind == JsonValueKind.False ? "Bad"
+                        : JsonRead.Str(v, "capabilityHint").Length > 0 ? "Warn" : "Dim");
                     var ep = JsonRead.Str(v, "baseUrl");
                     var custom = v.ValueKind == JsonValueKind.Object && v.TryGetProperty("custom", out var cst) && cst.ValueKind == JsonValueKind.True;
                     visionEndpoint.Text = ep.Length > 0
