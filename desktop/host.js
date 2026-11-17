@@ -27,6 +27,12 @@ class Host {
     this.probing = false;
     this.lastProbe = null;
     fs.mkdirSync(root, { recursive: true, mode: 0o700 });
+    const pendingRestore = path.join(root, "pending-memory-restore.json");
+    if (fs.existsSync(pendingRestore)) {
+      backup.writeSnapshot(root, "before-import");
+      backup.restoreFromFile(root, pendingRestore);
+      fs.renameSync(pendingRestore, path.join(root, "last-memory-import.json"));
+    }
     this.state = new State(path.join(root, "isle.json"));
     const configFile = path.join(root, "data", "config.json");
     if (!fs.existsSync(configFile)) {
@@ -66,21 +72,28 @@ class Host {
       });
     this.runtime = createRuntime({ root, env: {}, loggerLevel: "warn" });
     // Mac 本机试聊不加载插件、微信网关、位置探测或自动发送任务。
-    this.runtime.scheduler.stopAll();
     this.runtime.diary.stop();
     this.runtime.moments.stopAutoRead();
     this.runtime.stopLocationProbe?.();
     this.runtime.stopConfigWatch?.();
-    this.runtime.bot.javascriptPlugins.start = () => {};
+    this.runtime.offlineConfiguration = true;
     this.runtime.llm.switchFallback = () => null;
     this.vaultFile = path.join(root, "keys.enc.json");
     this.vault = fs.existsSync(this.vaultFile)
       ? JSON.parse(fs.readFileSync(this.vaultFile, "utf8"))
       : {};
     this.network = this.e.session.fromPartition("isle-models");
+    this.originals = require("./original-presets").installOriginals(
+      this,
+      source,
+    );
+    this.workbench = new (require("./workbench").Workbench)(this, source);
+    this.plugins = new (require("./plugins").Plugins)(this, this.workbench);
   }
   async ready() {
     await this.configure();
+    await this.workbench.start();
+    this.runtime.bot.javascriptPlugins.start();
   }
   idle() {
     if (this.controller || this.probing)
@@ -145,7 +158,12 @@ class Host {
         ...p,
         hasKey: Boolean(this.vault[p.id]),
       })),
-      persona: personaStore.summary(this.runtime.config),
+      persona: {
+        ...personaStore.summary(this.runtime.config),
+        aliases: this.runtime.config.persona.aliases,
+        emojiChance: this.runtime.config.chat.emojiChance,
+        discussionMaxChars: this.runtime.config.chat.discussionMaxChars,
+      },
       prompts: d.prompts,
       presets: d.presets.map((p) => ({ id: p.id, name: p.name })),
       sessionId: d.sessionId,
@@ -195,6 +213,14 @@ class Host {
     return this.view();
   }
   async invoke(action, input = {}) {
+    if (/^plugin-/.test(action)) return this.plugins.invoke(action, input);
+    if (
+      /^(workbench-|original-|tts-|sticker-|reminder-|diary-|moment-)/.test(
+        action,
+      ) ||
+      action === "budget"
+    )
+      return this.workbench.invoke(action, input);
     switch (action) {
       case "state":
         return this.view();
@@ -327,7 +353,34 @@ class Host {
         if (r.canceled) return this.view();
         const file = r.filePaths[0];
         if (fs.statSync(file).size > 200000) throw new Error("预设文件过大");
-        const p = preset(JSON.parse(fs.readFileSync(file, "utf8")));
+        const raw = JSON.parse(fs.readFileSync(file, "utf8"));
+        const p =
+          raw.kind === "whale-isle-persona"
+            ? preset(raw)
+            : (() => {
+                if (typeof raw.customPrompt !== "string")
+                  throw new Error("请选择鲸屿或原版的人设 JSON");
+                const patch = require("../src/persona/presets").toPatch(raw);
+                return preset({
+                  schemaVersion: 1,
+                  kind: "whale-isle-persona",
+                  name: raw.name || "导入的人设",
+                  persona: {
+                    ...patch,
+                    name:
+                      patch.name ||
+                      raw.personaName ||
+                      this.runtime.config.persona.name,
+                  },
+                  prompts: {
+                    role: raw.customPrompt,
+                    style:
+                      patch.customPrompt
+                        ?.slice(raw.customPrompt.length)
+                        .trim() || "",
+                  },
+                });
+              })();
         this.state.data.presets.push(p);
         this.state.save();
         return this.view();
@@ -365,20 +418,59 @@ class Host {
             (c.chatType === "group" ? "群聊模拟" : "私聊模拟") +
             (c.key.endsWith(":demo") ? " · 演示" : " · 模型对话"),
         }));
+      case "memory-detail": {
+        const chat = this.runtime.store.chatStore.chats.get(input.key);
+        if (!chat) throw new Error("会话不存在");
+        return {
+          messages: this.runtime.store.messages(input.key, 150),
+          summary: chat.summary || "",
+          people: [...chat.people.values()],
+        };
+      }
+      case "memory-restore": {
+        this.idle();
+        const r = await this.e.dialog.showOpenDialog({
+          title: "恢复记忆备份",
+          properties: ["openFile"],
+          filters: [{ name: "JSON备份", extensions: ["json"] }],
+        });
+        if (r.canceled) return { ok: false };
+        const file = r.filePaths[0];
+        if (fs.statSync(file).size > 100 * 1024 * 1024)
+          throw new Error("备份文件过大");
+        const bundle = JSON.parse(fs.readFileSync(file, "utf8"));
+        // 在隔离目录先按原版恢复器完整校验，确认后才安排下次启动导入。
+        const temp = fs.mkdtempSync(path.join(this.root, "restore-check-"));
+        try {
+          backup.restoreFrom(temp, bundle);
+        } finally {
+          fs.rmSync(temp, { recursive: true, force: true });
+        }
+        const answer = await this.e.dialog.showMessageBox({
+          type: "warning",
+          buttons: ["取消", "备份当前数据并重启恢复"],
+          defaultId: 0,
+          cancelId: 0,
+          message: "恢复这份记忆备份？",
+          detail:
+            "当前记忆将先备份。恢复会在重启鲸屿时执行，聊天和记忆以备份内容为准。",
+        });
+        if (answer.response !== 1) return { ok: false };
+        atomic(path.join(this.root, "pending-memory-restore.json"), bundle);
+        return { ok: true, restart: true };
+      }
       case "chat-history": {
         const mode = input.mode === "group" ? "group" : "private";
         const key = this.chatKey(mode, input.demo === true);
         return this.runtime.store.chatStore.chats.has(key)
-          ? this.runtime.store
-              .messages(key, 150)
-              .map((m) => ({
-                role: m.role,
-                text: m.text,
-                error: m.error === true,
-                meta:
-                  (input.demo ? "本地演示 · " : "") +
-                  new Date(m.ts).toLocaleTimeString("zh-CN"),
-              }))
+          ? this.runtime.store.messages(key, 150).map((m) => ({
+              role: m.role,
+              text: m.text,
+              error: m.error === true,
+              meta:
+                (input.demo ? "本地演示 · " : "") +
+                new Date(m.ts).toLocaleTimeString("zh-CN"),
+            }))
           : [];
       }
       case "memory-backup": {
@@ -519,6 +611,7 @@ class Host {
     }
   }
   async close() {
+    this.workbench.close();
     this.controller?.abort();
     this.runtime.scheduler.stopAll();
     this.runtime.diary.stop();

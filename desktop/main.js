@@ -9,6 +9,7 @@ const {
   session,
   net,
   safeStorage,
+  Notification,
 } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -128,7 +129,7 @@ app.whenReady().then(async () => {
     host = new Host({
       root: app.getPath("userData"),
       source: path.resolve(__dirname, ".."),
-      electron: { dialog, shell, session, net, safeStorage },
+      electron: { dialog, shell, session, net, safeStorage, Notification },
       emit: (data) => {
         if (win && !win.isDestroyed()) win.webContents.send("isle:chat", data);
       },
@@ -152,7 +153,12 @@ app.whenReady().then(async () => {
         return { ok: false, error: "当前操作尚未结束，请稍候或先停止生成" };
       if (!readOnly) operation = true;
       try {
-        return { ok: true, value: await host.invoke(action, input) };
+        const value = await host.invoke(action, input);
+        if (action === "memory-restore" && value.restart) {
+          app.relaunch();
+          setImmediate(() => app.quit());
+        }
+        return { ok: true, value };
       } catch (err) {
         return {
           ok: false,

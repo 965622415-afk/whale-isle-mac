@@ -90,13 +90,14 @@ function render() {
       chat: loadChat,
       memory,
       diagnostics,
+      ...workPages,
     })[page](),
   );
 }
 function home() {
   const p = active();
   $("#content").innerHTML =
-    `<div class="hero"><div><div class="tag">A LITTLE ISLAND, ALL YOUR OWN</div><h2>让你的 AI，有自己的样子。</h2><p>从一个角色、一份提示词开始。<br>在这里配置、试聊，慢慢找到你想要的表达。</p><div class="actions"><button class="primary" data-nav="chat">开始试聊 ↗</button><button class="ghost" data-nav="prompts">编辑提示词</button></div></div><div class="island" aria-hidden="true"></div></div><div class="grid"><div class="card"><div class="card-title">当前模型</div><div class="card-value">${esc(p.name)}</div><div class="card-note">${esc(p.model)} · ${p.hasKey ? "密钥已加密保存" : p.provider === "ollama" ? "本机服务" : "等待配置密钥"}</div></div><div class="card"><div class="card-title">正在使用的角色</div><div class="card-value">${esc(state.persona.name)}</div><div class="card-note">${state.presets.length} 份个人预设 · 可随时切换</div></div><div class="card"><div class="card-title">连接方式</div><div class="card-value">${{ direct: "直接连接", system: "系统代理", manual: "指定代理" }[p.proxyMode]}</div><div class="card-note">${p.timeout} 秒请求超时 · 本机独立配置</div></div></div><div class="section-title"><h2>把配置变成体验</h2><small>01 / 02 / 03</small></div><div class="panel"><div class="row"><div><strong>01　连接一个模型</strong><small>填写 API 密钥，并用真实请求测试连接。</small></div><button data-nav="models">模型设置 →</button></div><div class="row"><div><strong>02　定义角色与表达</strong><small>角色背景与提示词分开编辑，预设可以导入、导出。</small></div><button data-nav="persona">角色设定 →</button></div><div class="row"><div><strong>03　在本机对话中验证</strong><small>支持私聊与群聊模拟，查看模型实际收到的提示词。</small></div><button data-nav="chat">打开试聊 →</button></div></div><div class="footer-note">鲸屿 ${esc(state.version)} · macOS ${esc(state.arch)}<br>此版本专注本机配置与试聊，尚未接入微信，也不会自动向联系人发送消息。</div>`;
+    `<div class="hero"><div><div class="tag">A LITTLE ISLAND, ALL YOUR OWN</div><h2>让你的 AI，有自己的样子。</h2><p>从一个角色、一份提示词开始。<br>在这里配置、试聊，慢慢找到你想要的表达。</p><div class="actions"><button class="primary" data-nav="chat">开始试聊 ↗</button><button class="ghost" data-nav="prompts">编辑提示词</button></div></div><div class="island" aria-hidden="true"></div></div><div class="grid"><div class="card"><div class="card-title">当前模型</div><div class="card-value">${esc(p.name)}</div><div class="card-note">${esc(p.model)} · ${p.hasKey ? "密钥已加密保存" : p.provider === "ollama" ? "本机服务" : "等待配置密钥"}</div></div><div class="card"><div class="card-title">正在使用的角色</div><div class="card-value">${esc(state.persona.name)}</div><div class="card-note">${state.presets.length} 份个人预设 · 可随时切换</div></div><div class="card"><div class="card-title">连接方式</div><div class="card-value">${{ direct: "直接连接", system: "系统代理", manual: "指定代理" }[p.proxyMode]}</div><div class="card-note">${p.timeout} 秒请求超时 · 本机独立配置</div></div></div><div class="section-title"><h2>把配置变成体验</h2><small>01 / 02 / 03</small></div><div class="panel"><div class="row"><div><strong>01　连接一个模型</strong><small>填写 API 密钥，并用真实请求测试连接。</small></div><button data-nav="models">模型设置 →</button></div><div class="row"><div><strong>02　定义角色与表达</strong><small>角色背景与提示词分开编辑，预设可以导入、导出。</small></div><button data-nav="persona">角色设定 →</button></div><div class="row"><div><strong>03　在本机对话中验证</strong><small>支持私聊与群聊模拟，查看模型实际收到的提示词。</small></div><button data-nav="chat">打开试聊 →</button></div></div><div class="footer-note">鲸屿 ${esc(state.version)} · macOS ${esc(state.arch)}<br>已接入人设、表情图库、语音试听、提醒、日记、插件和高级设置；微信与 DSH 尚未接入。</div>`;
 }
 function models() {
   const p =
@@ -141,7 +142,7 @@ function probeMarkup(p) {
 function persona() {
   const p = state.persona;
   $("#content").innerHTML =
-    `<form id="persona-form" class="panel"><h2>角色的基本轮廓</h2><p>这些设定会参与上游人设内核的提示词组装。更细的行为要求可在“提示词与预设”中填写。</p><div class="fields">${field("角色名称", "name", p.name)}${field("怎么称呼你", "ownerName", p.ownerName)}${field("角色年龄", "age", p.age, "number", false, 'min="1" max="120"')}${field("身份 / 职业", "job", p.job)}${area("性格与表达", "personality", p.personality, 3)}${area("背景设定", "background", p.background, 3)}${area("外观设定（可留空）", "appearance", p.appearance, 2)}${field("私聊回复字数上限", "privateMaxChars", p.privateMaxChars, "number", false, 'min="40" max="800"')}${field("群聊回复字数上限", "groupMaxChars", p.groupMaxChars, "number", false, 'min="20" max="300"')}${field("私聊上下文条数", "historyTurns", p.historyTurns, "number", false, 'min="4" max="120"')}${field("群聊上下文条数", "groupHistoryTurns", p.groupHistoryTurns, "number", false, 'min="2" max="100"')}${select(
+    `<form id="persona-form" class="panel"><h2>角色的基本轮廓</h2><p>这些设定会参与上游人设内核的提示词组装。更细的行为要求可在“提示词与预设”中填写。</p><div class="fields">${field("角色名称", "name", p.name)}${field("怎么称呼你", "ownerName", p.ownerName)}${field("角色年龄", "age", p.age, "number", false, 'min="1" max="120"')}${field("身份 / 职业", "job", p.job)}${area("性格与表达", "personality", p.personality, 3)}${area("背景设定", "background", p.background, 3)}${area("外观设定（可留空）", "appearance", p.appearance, 2)}${field("私聊回复字数上限", "privateMaxChars", p.privateMaxChars, "number", false, 'min="40" max="800"')}${field("群聊回复字数上限", "groupMaxChars", p.groupMaxChars, "number", false, 'min="20" max="300"')}${field("私聊上下文条数", "historyTurns", p.historyTurns, "number", false, 'min="4" max="400"')}${field("群聊上下文条数", "groupHistoryTurns", p.groupHistoryTurns, "number", false, 'min="2" max="300"')}${select(
       "表情使用习惯",
       "emoji",
       p.emoji,
@@ -150,7 +151,7 @@ function persona() {
         ["正常", "正常"],
         ["多", "多用"],
       ],
-    )}<label class="check"><input type="checkbox" name="opinions" ${p.opinions ? "checked" : ""}>允许表达自己的看法</label></div><div class="actions"><button class="primary" type="submit">保存角色设定</button><button type="button" data-nav="prompts">继续编辑提示词 →</button></div></form>`;
+    )}${area("呼唤别名（每行一个）", "aliases", (p.aliases || []).join("\n"), 2)}${field("最多回复分段", "maxBubbles", p.maxBubbles || 2, "number", false, 'min="1" max="8"')}${field("讨论场景字数上限", "discussionMaxChars", p.discussionMaxChars || 400, "number", false, 'min="20" max="4000"')}${field("文字表情概率", "emojiChance", p.emojiChance || 0, "number", false, 'min="0" max="1" step="0.05"')}<label class="check"><input type="checkbox" name="masterRoast" ${p.masterRoast ? "checked" : ""}>允许对主人还嘴</label><label class="check"><input type="checkbox" name="proactive" ${p.proactive ? "checked" : ""}>人格允许主动搭话</label><label class="check"><input type="checkbox" name="opinions" ${p.opinions ? "checked" : ""}>允许表达自己的看法</label></div><div class="actions"><button class="primary" type="submit">保存角色设定</button><button type="button" data-nav="prompts">继续编辑提示词 →</button></div></form>`;
 }
 function promptPage() {
   const p = state.prompts;
@@ -402,7 +403,9 @@ $("#refresh").onclick = () =>
     render();
     toast("状态已刷新");
   });
-run(async () => {
-  state = await api("state");
-  render();
-});
+document.addEventListener("DOMContentLoaded", () =>
+  run(async () => {
+    state = await api("state");
+    render();
+  }),
+);

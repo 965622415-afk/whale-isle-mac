@@ -1,7 +1,7 @@
 {
   "name": "whale-isle-mac",
   "productName": "Whale Isle",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "description": "鲸屿 · AI 配置中心，macOS 桌面版",
   "main": "main.js",
   "private": true,

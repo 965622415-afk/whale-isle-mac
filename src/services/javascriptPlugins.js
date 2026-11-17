@@ -105,7 +105,8 @@ class JavaScriptPlugins {
       path.join(__dirname, 'javascriptPluginWorker.js')], {
       cwd: directory, windowsHide: true, detached: process.platform !== 'win32',
       env: { SystemRoot: process.env.SystemRoot || '', PATH: process.env.PATH || '',
-        TEMP: process.env.TEMP || '', TMP: process.env.TMP || '', LANG: 'C.UTF-8' },
+        TEMP: process.env.TEMP || '', TMP: process.env.TMP || '', LANG: 'C.UTF-8',
+        ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
       stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
     });
     const record = { child, flow, pending: new Map(), calls: new Map(), sequence: 0, stopped: false, readyReceived: false };

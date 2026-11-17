@@ -1,6 +1,6 @@
 {
   "name": "whale-isle-core",
-  "version": "4.2.0",
+  "version": "4.3.0",
   "updateEpoch": 1,
   "private": false,
   "description": "鲸屿 macOS AI 配置中心的模型、人设与记忆内核",
