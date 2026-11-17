@@ -1,0 +1,71 @@
+"use strict";
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const {
+  profile,
+  persona,
+  prompts,
+  preset,
+  composePrompt,
+  State,
+} = require("../state");
+test("API 地址拒绝凭据、查询和远程明文 HTTP", () => {
+  const p = new State("/nonexistent/whale-isle-test").active;
+  for (const baseUrl of [
+    "https://user:pass@api.example.com/v1",
+    "https://api.example.com?key=bad",
+    "http://api.example.com/v1",
+  ])
+    assert.throws(() => profile({ ...p, baseUrl }));
+  assert.equal(
+    profile({ ...p, baseUrl: "http://127.0.0.1:11434/v1" }).baseUrl,
+    "http://127.0.0.1:11434/v1",
+  );
+});
+test("导入预设只保留允许字段，不接受 API 密钥", () => {
+  const p = preset({
+    schemaVersion: 1,
+    kind: "whale-isle-persona",
+    name: "示例",
+    persona: {
+      name: "小屿",
+      apiKey: "not-a-real-secret",
+      __proto__: { polluted: true },
+    },
+    prompts: { role: "角色" },
+  });
+  assert.equal(p.persona.apiKey, undefined);
+  assert.equal(p.persona.polluted, undefined);
+  assert.throws(() => persona({ historyTurns: 9999 }));
+  assert.throws(() => prompts({ role: "a".repeat(24001) }));
+});
+test("群聊与私聊提示词相互隔离", () => {
+  const p = {
+    role: "角色",
+    style: "风格",
+    private: "仅私聊",
+    group: "仅群聊",
+    boundaries: "边界",
+  };
+  assert.ok(composePrompt(p, "private").includes("仅私聊"));
+  assert.ok(!composePrompt(p, "private").includes("仅群聊"));
+  assert.ok(!composePrompt(p, "group").includes("仅私聊"));
+});
+test("写入后重读保持配置；损坏文件不覆盖", () => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "isle-state-"));
+  try {
+    const f = path.join(d, "isle.json"),
+      s = new State(f);
+    s.data.prompts.private = "保留规则";
+    s.save();
+    assert.equal(new State(f).data.prompts.private, "保留规则");
+    fs.writeFileSync(f, "broken");
+    assert.throws(() => new State(f));
+    assert.equal(fs.readFileSync(f, "utf8"), "broken");
+  } finally {
+    fs.rmSync(d, { recursive: true, force: true });
+  }
+});

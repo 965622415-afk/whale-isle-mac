@@ -1,185 +1,117 @@
-[English](README.md) | [中文](docs/README.zh-CN.md)
+# 鲸屿 · AI 配置中心
 
-# 🐋 Whale Girl
+**Whale Isle** 是一款面向 Apple Silicon Mac 的本地 AI 配置工具。用一个独立桌面窗口管理模型连接、角色、人设提示词和本机试聊，把配置调整后再看实际效果。
 
-[![GitHub release](https://img.shields.io/github/v/release/Banan1cee/whale_girl)](https://github.com/Banan1cee/whale_girl/releases/latest)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
-[![Node.js](https://img.shields.io/badge/node-%3E%3D18-339933)](https://nodejs.org/)
-[![Python](https://img.shields.io/badge/python-3.12-3776AB)](https://www.python.org/)
-[![Wechatauto](https://img.shields.io/badge/wechatauto-1.2.10-4B8BBE)](https://pypi.org/project/wechatauto-replica/)
-![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078D4)
-[![GitHub stars](https://img.shields.io/github/stars/Banan1cee/whale_girl)](https://github.com/Banan1cee/whale_girl/stargazers)
+本仓库是 [Banan1cee/whale_girl](https://github.com/Banan1cee/whale_girl) 的独立 macOS 派生版本。桌面应用、品牌、代理配置与打包流程为本项目新增；模型兼容、人设、对话及记忆内核来自上游。
 
-A local-first AI companion for WeChat. She replies in group chats, remembers what people tell her, and can also send stickers, voice messages, and daily diary entries.
+**当前版本：4.2.0。此版本不接入微信，不会读取微信或向联系人发送消息。**
 
-Everything is controlled from one Windows launcher. There is no browser UI; `127.0.0.1:8787` only serves the local HTTP API.
+## 可以做什么
 
-> **Just want to run it?** Download `whale-girl-*-setup.exe` from [Releases](https://github.com/Banan1cee/whale_girl/releases/latest).
-> The installer includes Node.js, Python 3.12 and the .NET 10 desktop runtime, so no extra downloads are needed.
-
----
-
-## What it does
-
-- **WeChat replies** — answers @-mentions and her name in groups, keeps a conversation going while it is alive, and stays quiet when the topic ends.
-- **Memory** — records facts from private chats, compresses older group history, and stays silent when an image or sticker cannot be read.
-- **Human-like delivery** — splits a reply into short bubbles, avoids trailing punctuation, and rewrites repeated or parroted replies once.
-- **Extras** — stickers, Moments reading and manual interaction, Markdown diary, voice replies, web search, hot lists, and basic group admin.
-- **One control panel** — start, stop, configure, and diagnose everything from `WhaleLauncher.exe`.
-
-## Requirements
-
-- Windows 10 or 11
-- A logged-in WeChat 4.x account (a secondary account is recommended)
-- One model API key: DeepSeek, Zhipu GLM, SiliconFlow, Qwen, Doubao, OpenCode, or any OpenAI-compatible endpoint
-- Optional: Ollama or another local OpenAI-compatible server
-- Administrator rights for WeChat UI automation
-- Install into an **ASCII-only path** such as `D:\whale-girl`; Chinese characters in the path can break WeChat automation
-
-## Install and first run
-
-1. Download `whale-girl-*-setup.exe` from [Releases](https://github.com/Banan1cee/whale_girl/releases/latest) and run it.
-2. Open the **Whale Girl** desktop shortcut.
-3. In the launcher, open **Settings**, choose a model provider, and fill in the API key.
-4. Open **WeChat bridge**, select the account, then press **Start**.
-5. Wait until the Status page shows both the kernel and the bridge as running.
-
-The installer bundles the Node.js runtime, Python 3.12, `wechatauto`, and the .NET 10 desktop runtime. The launcher prefers bundled runtimes and falls back to `PATH` only when needed. No `npm install` is required.
-
-## Main features
-
-| Feature | What it does |
+| 功能 | 当前支持 |
 | --- | --- |
-| WeChat group replies | Replies to @-mentions and her name; ignores unrelated arguments |
-| Memory | Remembers owner facts and compresses old group conversations |
-| Stickers | 27 built-in images plus custom categories; sending is off by default |
-| Moments | Reads the selected account's local cache; manual like, comment, and copy-draft |
-| Diary | Writes at most one Markdown entry per day to `data/diary/YYYY/MM-DD.md` |
-| Voice | Transcribes incoming voice (DeepSeek ASR or Alibaba Cloud); optional voice replies through BreezeBlue, MiniMax, or SiliconFlow |
-| Search | Optional DeepSeek/Zhihu search APIs with automatic local Bing/360 fallback; hot lists and link extraction |
-| Group admin | Mute/unmute, switch model, change tone, clear memory, and low-battery good-night |
-| Diagnostics | Built-in logs, account checks, UIA self-test, and update checks |
+| 模型与连接 | 多份配置、DeepSeek / OpenAI Chat Completions 兼容接口 / Ollama、自定义地址与模型 |
+| 代理 | 每个模型独立选择直连、系统代理或指定 HTTP 代理；独立请求超时 |
+| API 密钥 | 使用 macOS 支持的安全存储加密，界面只显示是否已配置 |
+| 角色设定 | 名称、称呼、身份、性格、背景、外观、字数与上下文条数 |
+| 提示词 | 核心角色、表达风格、私聊规则、群聊规则和行为边界分别编辑 |
+| 人设预设 | 另存、切换、导入与导出 JSON；不包含模型密钥 |
+| 本机试聊 | 私聊与群聊模拟、流式输出、停止生成、显式演示模式、实际提示词查看 |
+| 本机记忆 | 按会话保存、统计、备份；清空前自动保存快照 |
+| 诊断 | 真实模型连接测试、错误原因、最近日志和数据目录入口 |
 
-Detailed behavior and configuration are documented under [`docs/`](docs/).
+## 安装
 
-## Updates and stopping
+要求：Apple Silicon（M 系列）Mac，macOS 13 或更新版本。
 
-- **Update**: open **Check for updates** in the launcher. It reads `release-manifest.json`, downloads the official installer, verifies SHA256, and installs over the old version. `data/` and `config.json` are preserved.
-- **Stop**: press **Stop** in the launcher, then close it. The kernel and bridge stop together.
-- **Optional cleanup**: after closing the launcher, run `powershell -File scripts\stop-all.ps1` if a process is left behind. It writes `data\PAUSED` so nothing restarts automatically.
-- **Resume**: open `WhaleLauncher.exe` and press **Start**; the pause marker is cleared.
+1. 从本仓库 [Releases](https://github.com/965622415-afk/whale-isle-mac/releases) 下载 `Whale-Isle-4.2.0-arm64.dmg`（发布后提供）。
+2. 打开磁盘映像，将 **Whale Isle.app** 拖入「应用程序」。
+3. 启动应用，窗口名称为「鲸屿 · AI 配置中心」。
 
-## Configuration
+本地构建使用 ad-hoc 签名，未进行 Apple Developer ID 签名或公证。它是本机开发构建，不是已公证的公开发行版。无需安装 Node、Python、.NET 或 Windows 组件。
 
-Most settings live in the launcher's **Settings** page. Advanced users can edit `config.json` directly. The template is [`config/config.example.json`](config/config.example.json); `config.json` is git-ignored.
+## 第一次使用
 
-| Field | Meaning |
-| --- | --- |
-| `provider` / `deepseek.apiKey` | Model provider and key |
-| `persona.master.names` / `persona.master.wxids` | Who counts as the owner |
-| `gateway.wechat.inboundToken` | Bridge token; change it from the default |
-| `group.requireAt` | Whether group messages must @ the bot first |
-| `chat.privateMaxChars` | Reply length limit |
-| `diary.enabled` / `diary.time` | Daily diary switch and generation time |
+### 1. 配置模型
 
-The full field list is in [`docs/设置说明.md`](docs/设置说明.md). Owner and admin rules are explained there as well.
+打开「模型与连接」，选择已有的 DeepSeek / OpenAI 配置，或添加自己的配置。填写服务商给出的密钥、API 地址及模型名称，点击「保存并启用」，再点击「测试当前连接」。
 
-## Documentation
+- **DeepSeek**：默认直接连接；模型名应以你的账户和服务商实际支持列表为准。
+- **OpenAI 兼容服务**：API 地址通常以 `/v1` 结尾；支持 `/chat/completions` 协议，不代表支持所有服务商或 Responses-only 模型。
+- **Ollama**：选择 Ollama 类型，例如 `http://127.0.0.1:11434/v1`，填写已安装的本地模型名称，无需 API 密钥。
+- **代理**：例如 Clash HTTP 代理 `http://127.0.0.1:7897`。端口以你自己电脑的配置为准。使用指定代理的模型需要代理程序继续运行。
 
-| Document | Contents |
-| --- | --- |
-| [`docs/设置说明.md`](docs/设置说明.md) | All configuration fields and admin commands |
-| [`docs/接入微信.md`](docs/接入微信.md) | WeChat bridge, UIA elevation, multi-account notes |
-| [`docs/日记功能.md`](docs/日记功能.md) | Diary behavior and troubleshooting |
-| [`docs/朋友圈实现.md`](docs/朋友圈实现.md) | Moments cache, reading, and manual interaction |
-| [`docs/搜索模块.md`](docs/搜索模块.md) | Search sources and relevance rules |
-| [`docs/维护手册.md`](docs/维护手册.md) | Recovery, logs, backup, and factory reset |
-| [`docs/架构总览.md`](docs/架构总览.md) | Kernel, bridge, launcher, and data flow |
-| [`docs/打包与签名.md`](docs/打包与签名.md) | Build, packaging, signing, and release steps |
-| [`docs/CHANGELOG.md`](docs/CHANGELOG.md) | Full change history |
+应用不会读取或复用其他软件中保存的密钥。API 地址改变时，必须重新填写密钥或先清除旧密钥，防止把旧凭据发往新服务。
 
-## Project structure
+### 2. 设定角色与提示词
 
-```
-whale-girl/                        # repository layout; runtime data is never committed
-├─ server.js                       # HTTP server and webhooks
-├─ WhaleLauncher.exe               # the only GUI entry point
-├─ package.json
-├─ release-manifest.json
-├─ README.md                       # this file
-├─ CONTRIBUTING.md
-├─ AGENTS.md
-├─ LICENSE
-├─ .gitignore
-├─ .gitattributes
-├─ .github/                        # CI and releases
-├─ config/
-│  └─ config.example.json          # configuration template
-├─ src/                            # Node.js kernel
-│  ├─ adapters/                    # outbound integrations
-│  ├─ core/                        # decisions and parsing
-│  ├─ http/                        # routes and security gates
-│  ├─ infra/                       # configuration and infrastructure
-│  ├─ llm/                         # model client
-│  ├─ memory/                      # memory and token budget
-│  ├─ persona/                     # persona and prompts
-│  ├─ pipeline/                    # message orchestration
-│  └─ services/                    # stateful services
-├─ bridge/                         # Python bridge
-├─ launcher/                       # WPF launcher source
-├─ installer/                      # Inno Setup (bundled compiler)
-├─ scripts/                        # build and maintenance scripts
-├─ assets/                         # persona presets and lexicons
-├─ examples/                       # bridge entry and media fallbacks
-├─ docs/                           # documentation
-├─ website/                        # static project site
-├─ vendor/                         # pinned wechatauto source
-└─ tests/                          # tests
+在「角色设定」编辑基础信息；在「提示词与预设」填写具体规则。留空的模块沿用角色内核的默认组装逻辑。私聊规则只进入私聊场景，群聊规则只进入群聊模拟。
+
+先保存，再使用「预览生效提示词」查看组装结果。试聊中的「本轮提示词」显示该轮请求实际采用的 system 和 turns。
+
+将满意的角色与提示词保存为预设，之后可继续调整或导出给自己使用。导入预设只会新增一份预设，点击「使用」后才替换当前设定。
+
+### 3. 在本机试聊
+
+配置密钥后，关闭「演示模式」，发送消息即可真实调用当前模型；真实 API 请求可能产生服务商用量费用。`⌘ Enter` 发送消息，可点击「停止生成」取消。
+
+没有密钥时，可以显式勾选「演示模式」检查本机对话和记忆流程。**演示回复不证明模型已联通，也不用于评估你的人设提示词效果。**
+
+「新对话」会切换到新的会话，旧会话记忆保留。群聊模式是本机模拟，不会加入真实微信群。
+
+## 数据保存在哪里
+
+```text
+~/Library/Application Support/Whale Isle/
+├── isle.json          模型连接设置、模块提示词及个人预设（无明文 API 密钥）
+├── keys.enc.json      加密后的模型密钥，依赖本机安全存储解密
+├── assets/            人设内核使用的资源
+└── data/              本机角色配置、对话记忆、备份及诊断日志
 ```
 
-Not committed; generated at runtime: `data/` (keys, memory, logs), `runtime/` (bundled Node and Python), `artifacts/` (build output), and `config.json` (local configuration).
+重装应用不会自动删除这个目录。通过「诊断」或「对话与记忆」中的按钮可以打开它。
 
-## Development
+- 预设导出不包含 API 密钥、聊天记录或记忆。
+- 记忆备份包含本机对话资料，默认不包含 API 密钥。
+- 整个数据目录、导出的个人资料和诊断日志都不应提交到公开仓库。
+- 使用在线模型时，组成请求的人设和对话内容会发送给你选定的模型服务；“本机保存”不等于“离线推理”。
 
-Development, tests, packaging, and release steps are in [CONTRIBUTING.md](CONTRIBUTING.md).
-The kernel uses CommonJS and has zero npm runtime dependencies. Tests run with `node tests/<name>.test.js`; see [`docs/回归测试覆盖对照.md`](docs/回归测试覆盖对照.md) for coverage notes.
+## 已知限制
 
-## Security and privacy
+- **没有微信接入**：不包含原项目 Windows 微信桥接、朋友圈、自动发送与桌面微信监听。
+- 当前只构建、验证 Apple Silicon arm64；没有验证 Intel Mac。
+- 不提供插件市场、自动更新、自动日记或其他后台主动任务。
+- 模型 API 支持程度取决于具体服务与模型参数，连接测试会返回实际结果。
+- 当前界面不提供跨设备同步。密钥加密文件不应当被当作跨设备迁移包。
+- 本机记忆暂时提供备份导出与清空前快照；没有提供图形化备份恢复入口。
+- 关闭窗口会退出应用并停止进行中的请求。
 
-### Third-party plugin disclaimer
+## 开发和构建
 
-Community plugins are developed and maintained by their respective authors. Marketplace listing, checksums, scans or reviews do not guarantee that a plugin is free of malware or vulnerabilities, and do not constitute a security endorsement. Local ZIP packages have not gone through marketplace submission checks.
+详见 [macOS 开发与交付](docs/MACOS.md)。
 
-Plugins may cause privacy leaks, data loss, crashes, unintended messages, account restrictions or third-party service charges. Check the source, version and permissions, back up important data and test carefully before enabling a plugin. Stop or uninstall suspicious plugins and report the plugin ID and version. Uninstalling cannot undo messages already sent or data already disclosed.
+```bash
+npm --prefix desktop ci
+npm --prefix desktop test
+npm --prefix desktop start
+npm --prefix desktop run package
+```
 
-To the extent permitted by applicable law, third-party plugins are provided as-is without additional warranties from the Whale Girl project or marketplace maintainers; liability remains subject to applicable law and any express agreement. This notice does not waive users' statutory rights or exclude liabilities that cannot legally be excluded, and does not replace security controls or review. Read the [full plugin disclaimer](docs/插件免责声明.md), also available inside the marketplace.
+桌面依赖固定在 `desktop/package-lock.json`，仅用于开发与打包。内核继续保持零 npm 运行时依赖。构建需要 macOS Command Line Tools（用于图标生成与签名）。
 
-- The API binds to `127.0.0.1:8787` by default. **Never expose it to the internet**; there is no login layer.
-- `data/` and `config.json` are git-ignored. Never commit API keys, WeChat IDs, group IDs, or chat history.
-- The bridge uses UI automation and reads the local WeChat database. It does not patch WeChat or inject code, but it may still violate WeChat's terms of service. Use it at your own risk.
-- Replies are generated by a model. Be careful with automatic replies in public groups; all management commands require the admin spell.
-- Privacy policy: [`docs/PRIVACY.md`](docs/PRIVACY.md).
+```text
+desktop/              鲸屿 macOS 桌面宿主、界面、测试与打包
+src/                  复用的模型、人设、对话与记忆内核
+assets/               上游内核资源
+config/               配置模板
+docs/MACOS.md         本版构建与验证说明
+docs/UPSTREAM.md      上游来源与派生范围
+```
 
-## Download
+仓库仍保留 `launcher/`、`bridge/`、`vendor/`、Windows 构建脚本与上游历史文档，便于追溯和后续对照；**它们不是此 Mac 应用的安装内容**。
 
-Only download installers from **GitHub Releases**: <https://github.com/Banan1cee/whale_girl/releases>. Checksums and verification commands are in [`docs/DOWNLOAD.md`](docs/DOWNLOAD.md).
+## 来源与许可证
 
-## Code signing policy
+感谢 [Banan1cee/whale_girl](https://github.com/Banan1cee/whale_girl) 及其贡献者。鲸屿不是原作者的官方 macOS 版本，不会向上游自动推送改动。
 
-Current release builds are **not signed yet**, so Windows may show "Unknown publisher". Verify `SHA256SUMS.txt` from the release before installing. The signing policy is in [`docs/CODE_SIGNING_POLICY.md`](docs/CODE_SIGNING_POLICY.md); the privacy policy is in [`docs/PRIVACY.md`](docs/PRIVACY.md).
-
-## Articles
-
-- **我在微信里养了个 AI 群友：零焦点 UIA 收发、本地数据、可换人设** — how the bridge talks to WeChat without stealing focus, the UIA/WM_CHAR version traps, and the personas system.
-  - Zhihu: <https://zhuanlan.zhihu.com/p/2103852627175986683>
-  - Copy in this repo: [`docs/articles/wechat-ai-companion.md`](docs/articles/wechat-ai-companion.md)
-## Acknowledgements
-
-- **Character author 上善无形** — the Whale Girl icon is a derivative work based on their original character. See [`docs/NOTICE.md`](docs/NOTICE.md).
-- **[wechatauto-replica](https://github.com/fanyuantaier/wechatauto-replica)** (Apache-2.0) — Windows WeChat 4.x automation library. A pinned copy lives in `vendor/wechatauto/`; build-time and runtime patches are kept outside the upstream source.
-- **[wxauto](https://github.com/cluic/wxauto)** (Apache-2.0) — the original Windows WeChat automation project whose approach inspired `wechatauto-replica`.
-- **[VB-CABLE](https://vb-audio.com/Cable/)** — virtual audio cable used by optional voice sending; the installer only ships the official driver installer.
-
-## License
-
-**AGPL-3.0-only** — see [LICENSE](LICENSE). Commercial use is allowed, but modified versions distributed or offered over a network must provide the complete corresponding source. Keep the attribution in [`docs/NOTICE.md`](docs/NOTICE.md).
+本派生项目继续遵循 **AGPL-3.0-only**，见 [LICENSE](LICENSE)。保留的上游资源署名见 [docs/NOTICE.md](docs/NOTICE.md)，派生说明见 [docs/UPSTREAM.md](docs/UPSTREAM.md)。新应用图标与界面为鲸屿独立设计。

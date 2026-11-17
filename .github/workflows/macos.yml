@@ -1,0 +1,41 @@
+name: Whale Isle macOS
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: isle-mac-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  macos:
+    name: macOS 校验与打包
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm --prefix desktop ci
+      - run: npm --prefix desktop test
+      - run: node scripts/check-layers.js
+      - run: node scripts/release-check.js
+      - run: node scripts/privacy-scan.js .
+      - name: 复用内核回归
+        run: |
+          node tests/persona.test.js
+          node tests/prompt-layout.test.js
+          node tests/llm.test.js
+          node tests/memory-backup.test.js
+      - run: npm --prefix desktop run package
+      - name: 打包为 ZIP（保留 macOS bundle 权限）
+        run: ditto -c -k --sequesterRsrc --keepParent 'artifacts/mac/Whale Isle-darwin-arm64/Whale Isle.app' artifacts/Whale-Isle-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Whale-Isle-arm64
+          path: artifacts/Whale-Isle-arm64.zip

@@ -1,9 +1,9 @@
 {
-  "name": "whale-girl-bot",
-  "version": "4.1.7",
+  "name": "whale-isle-core",
+  "version": "4.2.0",
   "updateEpoch": 1,
   "private": false,
-  "description": "鲸鲸 —— 模块化重构版（CommonJS，零 npm 依赖）",
+  "description": "鲸屿 macOS AI 配置中心的模型、人设与记忆内核",
   "main": "server.js",
   "type": "commonjs",
   "scripts": {
@@ -37,6 +37,6 @@
   "author": "",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "https://github.com/965622415-afk/whale-isle-mac.git"
   }
 }

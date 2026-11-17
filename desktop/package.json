@@ -1,0 +1,18 @@
+{
+  "name": "whale-isle-mac",
+  "productName": "Whale Isle",
+  "version": "4.2.0",
+  "description": "鲸屿 · AI 配置中心，macOS 桌面版",
+  "main": "main.js",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "package": "node scripts/package.js"
+  },
+  "devDependencies": {
+    "electron": "45.3.3",
+    "@electron/packager": "20.3.0"
+  }
+}
