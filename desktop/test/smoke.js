@@ -75,7 +75,7 @@ async function run(host, win) {
     );
     assert.equal(ui.ok, true);
     assert.equal(ui.model, "fixture");
-    assert.equal(ui.buttons, 15);
+    assert.equal(ui.buttons, 16);
     const originals = await host.invoke("original-list");
     assert.equal(originals.length, 7);
     await host.invoke("preset-apply", {
@@ -101,7 +101,7 @@ async function run(host, win) {
     const views = await win.webContents.executeJavaScript(
       `(async()=>{const checked=[];for(const name of Object.keys(workPages)){page=name;await workPages[name]();if(!document.querySelector('#content').textContent.trim())throw Error('empty '+name);checked.push(name)}return checked})()`,
     );
-    assert.equal(views.length, 8);
+    assert.equal(views.length, 9);
     const pluginRoot = path.join(host.root, "data", "plugins");
     fs.mkdirSync(pluginRoot, { recursive: true });
     const flow = {

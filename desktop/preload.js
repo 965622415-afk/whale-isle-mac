@@ -1,6 +1,15 @@
 "use strict";
 const { contextBridge, ipcRenderer } = require("electron");
 const allowed = new Set([
+  "dsh-state",
+  "dsh-save",
+  "dsh-pick-workspace",
+  "dsh-pick-app",
+  "dsh-test",
+  "dsh-run",
+  "dsh-stop",
+  "dsh-answer",
+  "dsh-open-workspace",
   "state",
   "model-save",
   "model-select",

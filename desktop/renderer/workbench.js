@@ -239,7 +239,7 @@ function marketMarkup() {
 }
 workPages.bridge = async () => {
   $("#content").innerHTML =
-    `<div class="panel"><h2>Mac 微信桥接</h2><div class="hint warning">尚未接入 · 不具备微信自动收发能力</div><p>原版依赖 Windows 微信与 Windows 自动化接口。Mac 端需要独立实现账号识别、会话定位、接收去重、文本/表情/语音发送和结果确认，不能复用 Windows DLL 或虚拟声卡驱动。</p><p>本轮保留相关功能的配置和本机管理；依赖微信的操作会标注等待桥接。</p></div><div class="panel"><h2>DeepSeek Harness</h2><div class="hint">尚未接入 · 本轮先完成原版工作台迁移</div><p>目标链路：微信消息 → 鲸屿 → DSH 执行任务 → 鲸屿回传微信。模型 API 连接与 DSH 执行任务是两项独立能力。</p></div>`;
+    '<div class="panel"><h2>Mac 微信桥接</h2><div class="hint warning">尚未接入 · 不具备微信自动收发能力</div><p>Harness任务已可在独立页面提交；微信消息自动触发任务和回传仍需要Mac微信桥接。</p><button data-nav="harness">打开 Harness 任务中心</button></div>';
 };
 const oldMemoryPage = memory;
 memory = async function () {
