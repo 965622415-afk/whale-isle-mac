@@ -1,3 +1,16 @@
+# 鲸屿 macOS 派生版约定
+
+用户已明确要求将项目改为 macOS 配置中心，当前阶段排除微信接入。
+
+- Mac 桌面 UI 在 `desktop/`，产物为 Whale Isle.app；不修改或重发 Windows EXE。
+- 内核继续保持零 npm 运行时依赖；Electron 和打包工具仅放在 desktop 的固定版本开发依赖中。
+- 仅向 `965622415-afk/whale-isle-mac` 提交，不向上游推送或发 PR。
+- 应用品牌为鲸屿 / Whale Isle；README 描述实际 Mac 能力，上游许可证及署名必须保留。
+- 密钥通过 macOS 安全存储加密，不从其他应用中导入凭据。不得上传本机运行数据。
+- 验证：`npm --prefix desktop test`，Electron 本机模型 fixture 冒烟，以及下方上游规定的分层、发布和隐私检查。
+
+以下为保留的上游协作约定。与上方 macOS 范围冲突时以上方为准。
+
 # AGENTS.md —— 给 AI / 自动化协作者的项目约定
 
 本文件是进入这个仓库时的默认约定。任务书 / 用户当次指令与这里冲突时，以任务书 / 当次指令为准；
