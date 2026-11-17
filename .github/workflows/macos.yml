@@ -1,7 +1,7 @@
 name: Whale Isle macOS
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 permissions:
@@ -12,7 +12,7 @@ concurrency:
 jobs:
   macos:
     name: macOS 校验与打包
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
