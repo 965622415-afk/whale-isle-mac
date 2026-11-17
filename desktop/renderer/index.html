@@ -1,3 +1,62 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>鲸屿 · AI 配置中心</title><link rel="stylesheet" href="style.css"></head><body>
-<aside class="sidebar"><div class="brand"><svg viewBox="0 0 48 48" aria-hidden="true"><path d="M8 25c0-9 7-15 17-15 8 0 12 5 13 12l7-5-2 12-8-1C24 42 8 37 8 25Z" fill="currentColor"/><circle cx="29" cy="20" r="2" fill="#14252f"/><path d="m17 10-4-7m9 5 1-5" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg><div><strong>鲸屿</strong><small>WHALE ISLE</small></div></div><div class="workspace-label">你的 AI 工作台</div><nav id="nav"></nav><div class="sidebar-bottom"><span class="status-dot"></span><span>本机运行 · 数据留在本机</span></div></aside>
-<main><header><div><div class="eyebrow">WHALE ISLE / MACOS</div><h1 id="page-title">总览</h1></div><div class="header-right"><span id="active-model" class="chip"></span><button id="refresh" class="icon-button" title="刷新状态">↻</button></div></header><div id="content"></div></main><div id="toast" role="status"></div><dialog id="modal"><form method="dialog"><div class="modal-top"><h2 id="modal-title"></h2><button aria-label="关闭">×</button></div><div id="modal-body"></div></form></dialog><script src="app.js"></script></body></html>
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <title>鲸屿 · AI 配置中心</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="brand">
+        <svg viewBox="0 0 48 48" aria-hidden="true">
+          <path
+            d="M8 25c0-9 7-15 17-15 8 0 12 5 13 12l7-5-2 12-8-1C24 42 8 37 8 25Z"
+            fill="currentColor"
+          />
+          <circle cx="29" cy="20" r="2" fill="#14252f" />
+          <path
+            d="m17 10-4-7m9 5 1-5"
+            stroke="currentColor"
+            stroke-width="3"
+            stroke-linecap="round"
+          />
+        </svg>
+        <div><strong>鲸屿</strong><small>WHALE ISLE</small></div>
+      </div>
+      <div class="workspace-label">你的 AI 工作台</div>
+      <nav id="nav"></nav>
+      <div class="sidebar-bottom">
+        <span class="status-dot"></span><span>本机运行 · 数据留在本机</span>
+      </div>
+    </aside>
+    <main>
+      <header>
+        <div>
+          <div class="eyebrow">WHALE ISLE / MACOS</div>
+          <h1 id="page-title">总览</h1>
+        </div>
+        <div class="header-right">
+          <span id="active-model" class="chip"></span
+          ><button id="refresh" class="icon-button" title="刷新状态">↻</button>
+        </div>
+      </header>
+      <div id="content"></div>
+    </main>
+    <div id="toast" role="status"></div>
+    <dialog id="modal">
+      <form method="dialog">
+        <div class="modal-top">
+          <h2 id="modal-title"></h2>
+          <button aria-label="关闭">×</button>
+        </div>
+        <div id="modal-body"></div>
+      </form>
+    </dialog>
+    <script src="app.js"></script>
+  </body>
+</html>
