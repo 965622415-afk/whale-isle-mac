@@ -112,7 +112,13 @@ class Host {
   }
   async configure() {
     const p = this.state.active;
-    const key = await this.secret(p.id);
+    let key = "";
+    this.keyError = "";
+    try {
+      key = await this.secret(p.id);
+    } catch {
+      this.keyError = "当前模型密钥无法解密，请在模型设置中重新填写";
+    }
     const cfg = this.runtime.config;
     cfg.provider = p.provider;
     cfg.llm = {
@@ -169,6 +175,7 @@ class Host {
       sessionId: d.sessionId,
       busy: Boolean(this.controller || this.probing),
       lastProbe: this.lastProbe,
+      keyError: this.keyError,
       hasKey: Boolean(this.vault[this.state.active.id]),
       mock: this.runtime.llm.isMock,
       memory: this.runtime.store.summary(),

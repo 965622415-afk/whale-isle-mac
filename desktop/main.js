@@ -25,8 +25,8 @@ app.setPath(
 );
 let win,
   host,
-  quitting = false,
-  operation = false;
+  quitting = false;
+const gate = new (require("./operations").OperationGate)();
 if (!app.requestSingleInstanceLock()) app.quit();
 app.on("second-instance", () => {
   if (win) {
@@ -141,19 +141,8 @@ app.whenReady().then(async () => {
         event.senderFrame?.url !== rendererUrl
       )
         throw new Error("请求来源无效");
-      const readOnly = [
-        "state",
-        "logs",
-        "about",
-        "memory-list",
-        "chat-history",
-        "chat-stop",
-      ].includes(action);
-      if (operation && !readOnly)
-        return { ok: false, error: "当前操作尚未结束，请稍候或先停止生成" };
-      if (!readOnly) operation = true;
       try {
-        const value = await host.invoke(action, input);
+        const value = await gate.run(action, () => host.invoke(action, input));
         if (action === "memory-restore" && value.restart) {
           app.relaunch();
           setImmediate(() => app.quit());
@@ -164,8 +153,6 @@ app.whenReady().then(async () => {
           ok: false,
           error: require("../src/infra/errors").errorMessage(err),
         };
-      } finally {
-        if (!readOnly) operation = false;
       }
     });
     window();

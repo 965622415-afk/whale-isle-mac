@@ -35,6 +35,7 @@ async function main() {
     "workbench.js",
     "plugins.js",
     "legacy-plugin.js",
+    "operations.js",
     "state.js",
     "transport.js",
     "preload.js",

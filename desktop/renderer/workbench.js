@@ -187,7 +187,13 @@ workPages.settings = async () => {
   await getSettings();
   const budget = await api("budget");
   $("#content").innerHTML =
-    `<div class="panel"><h2>高级设置</h2><p>下列设置直接使用原版内核校验与持久化。聊天模型和代理在“模型与连接”中配置。</p><div class="hint">人设估算：${budget.systemTokens} tokens · 对话预算：${budget.dialogueBudget} · 单轮最大输入：${budget.maxInputTokens} / ${budget.hardTotalTokens}${budget.overHardLimit ? " · 超出上限" : ""}</div></div><form id="settings-form" class="workbench-form">${[
+    `<div class="panel"><h2>高级设置</h2>${Object.values(
+      wbSettings.secretErrors || {},
+    )
+      .map((x) => `<div class="hint warning">${esc(x)}</div>`)
+      .join(
+        "",
+      )}<p>下列设置直接使用原版内核校验与持久化。聊天模型和代理在“模型与连接”中配置。</p><div class="hint">人设估算：${budget.systemTokens} tokens · 对话预算：${budget.dialogueBudget} · 单轮最大输入：${budget.maxInputTokens} / ${budget.hardTotalTokens}${budget.overHardLimit ? " · 超出上限" : ""}</div></div><form id="settings-form" class="workbench-form">${[
       "chat",
       "group",
       "memory",

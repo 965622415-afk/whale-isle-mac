@@ -114,7 +114,7 @@ function models() {
       )
       .join(
         "",
-      )}<button class="add" data-action="model-new">＋ 添加模型配置</button></div><section><form id="model-form" class="panel"><h2>${esc(p.name)}</h2><p>每个配置独立保存连接方式与密钥。API 密钥不会包含在人设导出文件中。</p><input type="hidden" name="id" value="${esc(p.id)}"><div class="fields">${field("配置名称", "name", p.name)}${select(
+      )}<button class="add" data-action="model-new">＋ 添加模型配置</button></div><section><form id="model-form" class="panel"><h2>${esc(p.name)}</h2>${state.keyError ? `<div class="hint warning">${esc(state.keyError)}</div>` : ""}<p>每个配置独立保存连接方式与密钥。API 密钥不会包含在人设导出文件中。</p><input type="hidden" name="id" value="${esc(p.id)}"><div class="fields">${field("配置名称", "name", p.name)}${select(
       "模型接口类型",
       "provider",
       p.provider,

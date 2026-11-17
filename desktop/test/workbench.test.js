@@ -8,6 +8,123 @@ const assert = require("node:assert/strict"),
 const { Host } = require("../host");
 const { originals } = require("../original-presets");
 const source = path.resolve(__dirname, "../..");
+test("生成占用写操作时，新增工作台只读查询仍可运行且写操作保持互斥", async () => {
+  const { OperationGate } = require("../operations");
+  const gate = new OperationGate();
+  let finish;
+  const chat = gate.run("chat", () => new Promise((r) => (finish = r)));
+  for (const name of [
+    "sticker-list",
+    "tts-state",
+    "diary-list",
+    "plugin-list",
+    "original-list",
+    "workbench-settings",
+    "memory-detail",
+  ])
+    assert.equal(await gate.run(name, () => name), name);
+  await assert.rejects(
+    gate.run("persona-save", () => {}),
+    /当前操作/,
+  );
+  finish();
+  await chat;
+  assert.equal(await gate.run("persona-save", () => 42), 42);
+});
+test("可选服务密钥损坏不阻断启动，重填后警告消失", async () => {
+  const f = fixture();
+  try {
+    f.h.vault["service-vision"] = Buffer.from("broken").toString("base64");
+    const old = f.h.e.safeStorage.decryptStringAsync;
+    f.h.e.safeStorage.decryptStringAsync = async (b) => {
+      if (b.toString() === "broken") throw Error("fixture decryption failure");
+      return old(b);
+    };
+    await f.h.ready();
+    assert.equal(f.h.runtime.config.vision.apiKey, "");
+    assert.ok((await f.h.invoke("workbench-settings")).secretErrors.vision);
+    await f.h.invoke("workbench-save", {
+      secrets: { vision: "synthetic-repaired-key" },
+    });
+    assert.equal(f.h.runtime.config.vision.apiKey, "synthetic-repaired-key");
+    assert.deepEqual(f.h.workbench.secretErrors, {});
+  } finally {
+    await f.close();
+  }
+});
+test("日记汇集新对话之前的私聊，排除群聊与演示素材", async () => {
+  const f = fixture();
+  try {
+    await f.h.ready();
+    await f.h.invoke("model-save", {
+      ...f.h.state.active,
+      provider: "ollama",
+      baseUrl: "http://127.0.0.1:9999/v1",
+    });
+    for (const [key, text] of [
+      ["web:u:isle-old:private", "old"],
+      ["web:u:isle-new:private", "new"],
+      ["web:u:isle-demo:private:demo", "demo"],
+      ["web:g:isle-group:group", "group"],
+    ])
+      f.h.runtime.store.appendMessage(key, {
+        role: "user",
+        text,
+        ts: Date.now(),
+      });
+    await f.h.invoke("chat-new");
+    let rows;
+    f.h.runtime.diary.generate = async () => {
+      rows = f.h.runtime.diary.ownerTarget().session.messages;
+      f.h.runtime.diary.state = { status: "done" };
+    };
+    await f.h.invoke("diary-generate");
+    assert.deepEqual(
+      rows.map((x) => x.text),
+      ["old", "new"],
+    );
+  } finally {
+    await f.close();
+  }
+});
+test("定时日记失败可重试，成功后当天停止，连续失败最多三次", async () => {
+  const f = fixture();
+  try {
+    f.h.runtime.config.diary.enabled = true;
+    f.h.runtime.config.diary.time = "00:00";
+    let count = 0;
+    f.h.workbench.diaryGenerate = async () => {
+      count++;
+      if (count === 1) throw Error("fixture");
+      return { status: "done" };
+    };
+    f.h.workbench.tick();
+    await new Promise(setImmediate);
+    assert.equal(f.h.workbench.autoDiaryDay, "");
+    f.h.workbench.nextDiaryAttempt = 0;
+    f.h.workbench.tick();
+    await new Promise(setImmediate);
+    assert.equal(count, 2);
+    f.h.workbench.nextDiaryAttempt = 0;
+    f.h.workbench.tick();
+    assert.equal(count, 2);
+    f.h.workbench.autoDiaryDay = "";
+    f.h.workbench.diaryAttempts = 0;
+    count = 0;
+    f.h.workbench.diaryGenerate = async () => {
+      count++;
+      throw Error("fixture");
+    };
+    for (let i = 0; i < 4; i++) {
+      f.h.workbench.nextDiaryAttempt = 0;
+      f.h.workbench.tick();
+      await new Promise(setImmediate);
+    }
+    assert.equal(count, 3);
+  } finally {
+    await f.close();
+  }
+});
 function fixture() {
   const root = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), "isle-parity-")),

@@ -125,13 +125,19 @@ class Workbench {
     this.timer.unref?.();
   }
   async hydrate() {
+    this.secretErrors = {};
     for (const [id, key] of [
       ["vision", "vision.apiKey"],
       ["voice", "voice.apiKey"],
       ["search", "websearch.deepseek.apiKey"],
       ["search-zhihu", "websearch.zhihu.accessSecret"],
     ])
-      put(this.h.runtime.config, key, await this.h.secret("service-" + id));
+      try {
+        put(this.h.runtime.config, key, await this.h.secret("service-" + id));
+      } catch {
+        put(this.h.runtime.config, key, "");
+        this.secretErrors[id] = "密钥无法解密，请重新填写此服务密钥";
+      }
   }
   async keySave(id, value) {
     if (
@@ -172,6 +178,7 @@ class Workbench {
         ]),
       ),
       wechat: false,
+      secretErrors: this.secretErrors || {},
     };
   }
   async settingsSave(input) {
@@ -627,14 +634,28 @@ class Workbench {
           ":" +
           String(p.minute).padStart(2, "0"),
         day = time.dayKey(Date.now(), tz);
-      if (clock >= (cfg.diary.time || "23:00") && this.autoDiaryDay !== day) {
+      if (this.diaryAttemptDay !== day) {
+        this.diaryAttemptDay = day;
+        this.diaryAttempts = 0;
+      }
+      if (
+        clock >= (cfg.diary.time || "23:00") &&
+        this.autoDiaryDay !== day &&
+        this.diaryAttempts < 3
+      ) {
         this.nextDiaryAttempt = Date.now() + 15 * 60000;
-        this.autoDiaryDay = day;
-        void this.diaryGenerate().catch(() => {
-          this.h.runtime.logger.warn(
-            "本机定时日记生成失败，请在日记页检查模型和当天素材",
-          );
-        });
+        this.diaryAttempts += 1;
+        this.autoDiaryDay = "running";
+        void this.diaryGenerate()
+          .then((result) => {
+            this.autoDiaryDay = result.status === "done" ? day : "";
+          })
+          .catch(() => {
+            this.autoDiaryDay = "";
+            this.h.runtime.logger.warn(
+              "本机定时日记生成失败，请在日记页检查模型和当天素材",
+            );
+          });
       }
     }
   }
@@ -644,11 +665,13 @@ class Workbench {
     const diary = this.h.runtime.diary,
       old = diary.ownerTarget;
     // Mac 工作台的私聊也可生成日记；保留核心生成、落盘、索引与 token 预算逻辑。
-    const key = this.h.chatKey("private", false),
-      session = this.h.runtime.store.sessions.get(key);
-    if (!session) throw Error("今天还没有本机私聊素材，请先试聊");
+    const messages = [...this.h.runtime.store.chatStore.chats.entries()]
+      .filter(([key]) => /^web:u:isle-[\w-]+:private$/.test(key))
+      .flatMap(([, session]) => session.messages || [])
+      .sort((a, b) => Number(a.ts) - Number(b.ts));
+    if (!messages.length) throw Error("今天还没有本机私聊素材，请先试聊");
+    const session = { messages };
     diary.ownerTarget = () => ({
-      key,
       session,
       wxid: "isle-local",
       name: this.h.runtime.config.persona.ownerName || "你",
