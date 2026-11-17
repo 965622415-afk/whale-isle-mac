@@ -644,14 +644,15 @@ class Workbench {
         this.diaryAttempts < 3
       ) {
         this.nextDiaryAttempt = Date.now() + 15 * 60000;
-        this.diaryAttempts += 1;
         this.autoDiaryDay = "running";
         void this.diaryGenerate()
           .then((result) => {
             this.autoDiaryDay = result.status === "done" ? day : "";
+            if (result.status === "failed") this.diaryAttempts += 1;
           })
-          .catch(() => {
+          .catch((err) => {
             this.autoDiaryDay = "";
+            if (err.code !== "DIARY_BUSY") this.diaryAttempts += 1;
             this.h.runtime.logger.warn(
               "本机定时日记生成失败，请在日记页检查模型和当天素材",
             );
@@ -660,7 +661,12 @@ class Workbench {
     }
   }
   async diaryGenerate() {
-    this.h.idle();
+    try {
+      this.h.idle();
+    } catch (err) {
+      err.code = "DIARY_BUSY";
+      throw err;
+    }
     if (this.h.runtime.llm.isMock) throw Error("请先配置模型");
     const diary = this.h.runtime.diary,
       old = diary.ownerTarget;
@@ -669,7 +675,14 @@ class Workbench {
       .filter(([key]) => /^web:u:isle-[\w-]+:private$/.test(key))
       .flatMap(([, session]) => session.messages || [])
       .sort((a, b) => Number(a.ts) - Number(b.ts));
-    if (!messages.length) throw Error("今天还没有本机私聊素材，请先试聊");
+    if (!messages.length) {
+      diary.state = {
+        status: "empty",
+        message: "今天还没有本机私聊素材，请先试聊",
+        file: "",
+      };
+      return diary.status();
+    }
     const session = { messages };
     diary.ownerTarget = () => ({
       session,

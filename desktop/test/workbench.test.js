@@ -125,6 +125,28 @@ test("定时日记失败可重试，成功后当天停止，连续失败最多�
     await f.close();
   }
 });
+test("空日记不消耗模型失败额度，之后有素材仍自动生成", async () => {
+  const f = fixture();
+  try {
+    f.h.runtime.config.diary.enabled = true;
+    f.h.runtime.config.diary.time = "00:00";
+    let calls = 0;
+    f.h.workbench.diaryGenerate = async () => {
+      calls++;
+      return { status: calls > 4 ? "done" : "empty" };
+    };
+    for (let i = 0; i < 5; i++) {
+      f.h.workbench.nextDiaryAttempt = 0;
+      f.h.workbench.tick();
+      await new Promise(setImmediate);
+    }
+    assert.equal(calls, 5);
+    assert.equal(f.h.workbench.diaryAttempts, 0);
+    assert.ok(f.h.workbench.autoDiaryDay);
+  } finally {
+    await f.close();
+  }
+});
 function fixture() {
   const root = fs.realpathSync(
       fs.mkdtempSync(path.join(os.tmpdir(), "isle-parity-")),
