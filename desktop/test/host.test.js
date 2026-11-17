@@ -99,7 +99,7 @@ test("演示试聊持久化会话，提示词按场景切换", async () => {
     const sessions = await host.invoke("memory-list");
     assert.ok(sessions.some((x) => x.messageCount >= 2));
     await host.invoke("preset-save", { name: "单测预设" });
-    assert.equal(host.state.data.presets.length, 1);
+    assert.equal(host.state.data.presets.length, 8);
   } finally {
     await host.close();
     fs.rmSync(root, { recursive: true, force: true });

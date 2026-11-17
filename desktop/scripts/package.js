@@ -31,6 +31,11 @@ async function main() {
   for (const name of [
     "main.js",
     "host.js",
+    "original-presets.js",
+    "workbench.js",
+    "plugins.js",
+    "legacy-plugin.js",
+    "operations.js",
     "state.js",
     "transport.js",
     "preload.js",

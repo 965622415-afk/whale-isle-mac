@@ -53,7 +53,7 @@ try {
 function execute(wasm, input, timeoutMs) {
   return new Promise((resolve, reject) => {
     const worker = spawn(process.execPath, ['--wasm-max-mem-pages=16', '--wasm-max-table-size=1024',
-      '--max-old-space-size=32', '--no-addons', '-e', WORKER], { windowsHide: true, env: { SystemRoot: process.env.SystemRoot || '' },
+      '--max-old-space-size=32', '--no-addons', '-e', WORKER], { windowsHide: true, env: { SystemRoot: process.env.SystemRoot || '', ...(process.versions.electron ? { ELECTRON_RUN_AS_NODE: '1' } : {}) },
       stdio: ['pipe', 'pipe', 'ignore'] });
     let settled = false;
     const finish = (error, value) => {

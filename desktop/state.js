@@ -18,6 +18,10 @@ const PERSONA_FIELDS = [
   "proactive",
   "opinions",
   "masterRoast",
+  "aliases",
+  "maxBubbles",
+  "discussionMaxChars",
+  "emojiChance",
 ];
 const PROMPT_FIELDS = ["role", "style", "private", "group", "boundaries"];
 function atomic(file, data) {
@@ -48,6 +52,35 @@ function persona(value = {}) {
   const out = {};
   for (const k of PERSONA_FIELDS) {
     if (value[k] === undefined) continue;
+    if (k === "aliases") {
+      const a =
+        typeof value[k] === "string" ? value[k].split(/[\n,，]/) : value[k];
+      if (
+        !Array.isArray(a) ||
+        a.length > 30 ||
+        a.some((x) => typeof x !== "string" || x.length > 40)
+      )
+        throw new Error("别名格式无效");
+      out[k] = a.map((x) => x.trim()).filter(Boolean);
+      continue;
+    }
+    if (["maxBubbles", "discussionMaxChars", "emojiChance"].includes(k)) {
+      const n = Number(value[k]),
+        limits = {
+          maxBubbles: [1, 8],
+          discussionMaxChars: [20, 4000],
+          emojiChance: [0, 1],
+        }[k];
+      if (
+        !Number.isFinite(n) ||
+        n < limits[0] ||
+        n > limits[1] ||
+        (k !== "emojiChance" && !Number.isInteger(n))
+      )
+        throw new Error(k + " 超出范围");
+      out[k] = n;
+      continue;
+    }
     if (["proactive", "opinions", "masterRoast"].includes(k)) {
       if (typeof value[k] !== "boolean") throw new Error("开关值不正确");
       out[k] = value[k];
@@ -64,8 +97,8 @@ function persona(value = {}) {
         age: [1, 120],
         privateMaxChars: [40, 800],
         groupMaxChars: [20, 300],
-        historyTurns: [4, 120],
-        groupHistoryTurns: [2, 100],
+        historyTurns: [4, 400],
+        groupHistoryTurns: [2, 300],
       };
       const n = Number(value[k]),
         [min, max] = ranges[k];

@@ -663,3 +663,72 @@ dialog::backdrop {
     width: 100px;
   }
 }
+/* 功能页复用工作台表单与卡片，图库和音色列表保持在内容区内滚动。 */
+.sidebar nav {
+  overflow-y: auto;
+  min-height: 0;
+}
+.sidebar {
+  overflow-y: auto;
+}
+.config-key {
+  display: block;
+  color: var(--muted, #75808b);
+  font-size: 10px;
+  font-weight: 400;
+}
+.category-tabs,
+.voice-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 16px 0;
+  max-height: 260px;
+  overflow: auto;
+}
+.sticker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 12px;
+}
+.sticker-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  border: 1px solid #dce2e7;
+  border-radius: 12px;
+  padding: 10px;
+}
+.sticker-tile img {
+  height: 110px;
+  max-width: 100%;
+  object-fit: contain;
+}
+.sticker-tile small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+details summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 12px 0;
+}
+details pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sticky-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 16px;
+  background: #f5f7fb;
+  border-top: 1px solid #e0e6eb;
+}
+audio {
+  width: 100%;
+  margin-top: 12px;
+}
