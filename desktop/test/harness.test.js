@@ -32,6 +32,49 @@ async function until(fn) {
   }
   throw Error("fixture timed out");
 }
+test("首次打开工作目录会创建目录并报告原生失败，应用选择器接受app文件包", async () => {
+  const f = fixture();
+  try {
+    let opened;
+    f.h.h.e.shell = {
+      openPath: async (dir) => {
+        assert.ok(fs.statSync(dir).isDirectory());
+        opened = dir;
+        return "";
+      },
+    };
+    await f.h.invoke("dsh-open-workspace");
+    assert.equal(opened, f.h.data.config.workspace);
+    f.h.h.e.shell.openPath = async () => "fixture failure";
+    await assert.rejects(f.h.invoke("dsh-open-workspace"), /无法打开/);
+    let options;
+    f.h.h.e.dialog = {
+      showOpenDialog: async (o) => {
+        options = o;
+        return { canceled: true };
+      },
+    };
+    await f.h.pick("app");
+    assert.deepEqual(options.properties, ["openFile"]);
+    assert.deepEqual(options.filters[0].extensions, ["app"]);
+  } finally {
+    await f.close();
+  }
+});
+test("可验证子任务的审批转发给用户", async () => {
+  const f = fixture();
+  try {
+    f.h.run({ text: "CHILD_APPROVAL" });
+    await until(() => f.h.questions.size === 1);
+    const q = f.h.view().pending[0];
+    assert.ok(q.params.sessionId.endsWith("-child"));
+    f.h.answer({ id: q.id, outcome: "allowed-once" });
+    await f.h.running;
+    assert.equal(f.h.data.tasks[0].status, "completed");
+  } finally {
+    await f.close();
+  }
+});
 test("SDK握手与任务结果来自协议事件，历史持久化且不保存模型Key", async () => {
   const f = fixture();
   try {

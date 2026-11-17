@@ -25,12 +25,22 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       method: "session.status",
       params: { sessionId: session, status: "running" },
     });
+    if (prompt.includes("CHILD_APPROVAL"))
+      send({
+        method: "subagent.started",
+        params: {
+          parentSessionId: session,
+          childSessionId: session + "-child",
+        },
+      });
     if (prompt.includes("APPROVAL"))
       send({
         id: "server-approval",
         method: "approval/request",
         params: {
-          sessionId: session,
+          sessionId: prompt.includes("CHILD_APPROVAL")
+            ? session + "-child"
+            : session,
           toolName: "fixture-write",
           reason: "Test-only approval",
         },
@@ -44,6 +54,11 @@ readline.createInterface({ input: process.stdin }).on("line", (line) => {
       send({ id: waitingId, error: { code: -32603, message: "Rejected" } });
     }
   } else if (f.method === "shutdown") {
+    if (session)
+      send({
+        method: "session.status",
+        params: { sessionId: session, status: "running" },
+      });
     send({ id: f.id, result: {} });
     setImmediate(() => process.exit(0));
   }

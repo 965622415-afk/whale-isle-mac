@@ -119,7 +119,10 @@ class Harness {
     this.idle();
     const r = await this.h.e.dialog.showOpenDialog({
       title: kind === "app" ? "选择 DeepSeek Harness.app" : "选择任务工作目录",
-      properties: ["openDirectory"],
+      properties: kind === "app" ? ["openFile"] : ["openDirectory"],
+      ...(kind === "app"
+        ? { filters: [{ name: "DeepSeek Harness", extensions: ["app"] }] }
+        : {}),
     });
     if (r.canceled) return this.view();
     const dir = fs.realpathSync(r.filePaths[0]);
@@ -272,7 +275,11 @@ class Harness {
         });
         return;
       }
-      if (!this.active || frame.params?.sessionId !== this.active.id) {
+      if (
+        !this.active ||
+        !ACTIVE.has(this.active.status) ||
+        !this.ownedSessions?.has(frame.params?.sessionId)
+      ) {
         this.send({
           jsonrpc: "2.0",
           id: frame.id,
@@ -308,12 +315,21 @@ class Harness {
       return;
     }
     const p = frame.params;
-    if (!p || !this.active || p.sessionId !== this.active.id) return;
+    if (!p || !this.active || !ACTIVE.has(this.active.status)) return;
+    if (
+      frame.method === "subagent.started" &&
+      this.ownedSessions.has(p.parentSessionId)
+    ) {
+      this.ownedSessions.add(p.childSessionId);
+      return;
+    }
+    if (!this.ownedSessions.has(p.sessionId)) return;
     if (frame.method === "user-question.cancelled") {
       for (const [id, q] of this.questions)
         if (q.params.requestId === p.requestId) this.questions.delete(id);
       return;
     }
+    if (p.sessionId !== this.active.id) return;
     if (
       frame.method === "session.status" &&
       p.status === "running" &&
@@ -438,6 +454,7 @@ class Harness {
     this.data.tasks.unshift(task);
     this.data.tasks = this.data.tasks.slice(0, 100);
     this.active = task;
+    this.ownedSessions = new Set([task.id]);
     this.save();
     this.running = this.execute(task, persona);
     return this.view();
@@ -519,7 +536,13 @@ class Harness {
       case "dsh-answer":
         return this.answer(i);
       case "dsh-open-workspace":
-        await this.h.e.shell.openPath(this.data.config.workspace);
+        fs.mkdirSync(this.data.config.workspace, { recursive: true });
+        {
+          const error = await this.h.e.shell.openPath(
+            this.data.config.workspace,
+          );
+          if (error) throw Error("无法打开工作目录：" + error);
+        }
         return { ok: true };
       default:
         throw Error("未知Harness操作");
