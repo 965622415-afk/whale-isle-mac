@@ -2,7 +2,7 @@
 
 ## 范围
 
-4.3.0 是对齐原版管理模块的 macOS 工作台验收版本，不包含微信接入。桌面入口为 `desktop/main.js`；原有 Windows 启动器不参与本版构建。
+4.4.0 是对齐原版管理模块的 macOS 工作台验收版本，不包含微信接入。桌面入口为 `desktop/main.js`；原有 Windows 启动器不参与本版构建。
 
 ## 架构
 
@@ -14,6 +14,8 @@
 - 原版七份人设每次升级按 ID 补齐，原文有修改时保留用户版本。原文、旧版表达设置、结构化提取摘要分别保存，来源可检查。
 - 运行数据保存在 Electron userData 中，app 包内只有代码和静态资源。
 - 通过 Electron safeStorage 的异步接口加密密钥，不写入内核明文设置文件。只在主进程内存中把当前密钥交给模型客户端。
+
+- Harness 任务宿主见 `desktop/harness.js`：启动已安装应用内的官方 CLI SDK profile，以 stdio JSON-RPC 通信，不开放监听端口。审批和问题通过显式 IPC 回到界面；配置不含模型凭据。
 
 ## 构建
 
@@ -37,7 +39,7 @@ npm --prefix desktop run package
 mkdir -p artifacts/dmg
 cp -R 'artifacts/mac/Whale Isle-darwin-arm64/Whale Isle.app' artifacts/dmg/
 ln -s /Applications artifacts/dmg/Applications
-hdiutil create -volname 'Whale Isle' -srcfolder artifacts/dmg -ov -format UDZO 'artifacts/Whale-Isle-4.3.0-arm64.dmg'
+hdiutil create -volname 'Whale Isle' -srcfolder artifacts/dmg -ov -format UDZO 'artifacts/Whale-Isle-4.4.0-arm64.dmg'
 ```
 
 ## 验证

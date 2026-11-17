@@ -89,6 +89,7 @@ class Host {
     );
     this.workbench = new (require("./workbench").Workbench)(this, source);
     this.plugins = new (require("./plugins").Plugins)(this, this.workbench);
+    this.harness = new (require("./harness").Harness)(this);
   }
   async ready() {
     await this.configure();
@@ -220,6 +221,7 @@ class Host {
     return this.view();
   }
   async invoke(action, input = {}) {
+    if (/^dsh-/.test(action)) return this.harness.invoke(action, input);
     if (/^plugin-/.test(action)) return this.plugins.invoke(action, input);
     if (
       /^(workbench-|original-|tts-|sticker-|reminder-|diary-|moment-)/.test(
@@ -618,6 +620,7 @@ class Host {
     }
   }
   async close() {
+    await this.harness.close();
     this.workbench.close();
     this.controller?.abort();
     this.runtime.scheduler.stopAll();

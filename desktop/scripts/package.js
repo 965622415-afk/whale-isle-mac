@@ -36,6 +36,7 @@ async function main() {
     "plugins.js",
     "legacy-plugin.js",
     "operations.js",
+    "harness.js",
     "state.js",
     "transport.js",
     "preload.js",
