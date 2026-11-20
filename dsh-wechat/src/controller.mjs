@@ -6,6 +6,7 @@ import { listVoices, makeQr, speak } from './media.mjs'
 import { splitIlinkText } from './ilink.mjs'
 import { deliveries, readWorkFile } from './delivery.mjs'
 import { diaryClock, diaryPrompt } from './diary.mjs'
+import { resolveVoiceEndpoint, speakWithAPI } from './tts.mjs'
 
 const help = [
   '直接发消息，和鲸屿聊天。',
@@ -55,7 +56,10 @@ function groupFault(status) {
   return Object.assign(new Error('群聊请求未完成。'), { status })
 }
 
-export function createController({ dataDir, ilink, connectDsh, makeStorage = createStorage, clock = () => new Date(), voiceMaker = speak, retryMs = 3000 }) {
+export function createController({
+  dataDir, ilink, connectDsh, makeStorage = createStorage, clock = () => new Date(),
+  voiceMaker = speak, apiVoiceMaker = speakWithAPI, retryMs = 3000,
+}) {
   const store = makeStorage(dataDir)
   const groupRequests = new Map()
   const groupResults = new Map()
@@ -68,12 +72,17 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
   let diaryTimer
   let awakeProcess
   let stopped = false
+  const localSynthesis = new AbortController()
 
-  const dsh = connectDsh({ getSettings: () => store.state.settings, onReply, onFailure, onAttention, dataDir })
+  const dsh = connectDsh({
+    getSettings: () => store.state.settings, getStickers: () => store.state.media,
+    onReply, onFailure, onAttention, dataDir,
+  })
 
   async function status() {
     const sessions = await dsh.sessions()
     return {
+      apiVersion: 3,
       settings: store.state.settings,
       media: store.state.media,
       connection,
@@ -84,9 +93,44 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
       pinRequired: Boolean(pairing?.pinRequired),
       claimCode: pairing?.claimCode,
       groupKey: store.state.settings.groupEnabled ? store.state.groupKey : undefined,
+      voiceKeyConfigured: Boolean(voiceCredentials(store.state.settings)),
       chatId: sessions.find(entry => entry.mode === 'chat')?.id,
       workId: sessions.findLast(entry => entry.mode === 'work')?.id,
     }
+  }
+
+  function voiceCredentials(settings) {
+    if (settings.voiceProvider === 'system') return ''
+    try {
+      const endpoint = resolveVoiceEndpoint(settings.voiceProvider, settings.voiceEndpoint)
+      const stored = store.state.voiceKeys?.[settings.voiceProvider]
+      return stored?.endpoint === endpoint ? stored.key : ''
+    } catch {
+      return ''
+    }
+  }
+
+  function checkedKey(value) {
+    if (typeof value !== 'string' || value.length > 5000 || /[\r\n\0]/u.test(value) || /[^\x21-\x7e]/u.test(value.trim())) {
+      throw new Error('API 密钥格式不正确。')
+    }
+    return value.trim()
+  }
+
+  function voiceSettings(data) {
+    return Object.fromEntries(['voice', 'voiceMode', 'voiceProvider', 'voiceEndpoint', 'voiceModel', 'voiceId']
+      .filter(field => data && Object.hasOwn(data, field))
+      .map(field => [field, data[field]]))
+  }
+
+  async function makeVoice(text, settings, signal, inputKey = '') {
+    if (settings.voiceProvider === 'system') {
+      return { bytes: await voiceMaker(text, settings.voice, dataDir, signal), filename: '鲸屿的语音.wav' }
+    }
+    return apiVoiceMaker({
+      text, signal, provider: settings.voiceProvider, endpoint: settings.voiceEndpoint,
+      model: settings.voiceModel, voice: settings.voiceId, apiKey: inputKey || voiceCredentials(settings),
+    })
   }
 
   function syncWakeLock() {
@@ -163,16 +207,18 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
     }
   }
 
-  async function sendSticker(route, requested = '', context = '') {
-    const items = store.state.media
-    const matching = items.filter(entry => [entry.name, entry.description, ...String(entry.tags ?? '').split(/[,，\s]+/u)]
-      .some(value => value && (requested ? value.toLowerCase() === requested.toLowerCase() : value.length >= 2 && context.includes(value))))
-    const choices = requested || (context && matching.length) ? matching : items
-    if (!choices.length) return false
-    const item = choices[randomInt(choices.length)]
+  async function sendImage(route, item) {
     await ilink.sendMedia({
       ...route, kind: 'image', name: item.name, bytes: store.readMedia(item.id), clientId: `${route.id}-image`,
     })
+  }
+
+  async function sendSticker(route, requested = '') {
+    const items = store.state.media
+    const choices = requested ? items.filter(entry => [entry.name, entry.description, ...String(entry.tags ?? '').split(/[,，\s]+/u)]
+      .some(value => value && value.toLowerCase() === requested.toLowerCase())) : items
+    if (!choices.length) return false
+    await sendImage(route, choices[randomInt(choices.length)])
     return true
   }
 
@@ -238,7 +284,7 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
     return true
   }
 
-  async function onReply({ id, text }) {
+  async function onReply({ id, text, stickerId }) {
     if (stopped || settleGroup(id, text) || settleDiary(id, text)) return
     const job = getJob(id)
     if (!job) {
@@ -246,7 +292,10 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
       return
     }
     const result = typeof text === 'string' && text.trim() ? text.slice(0, 200000) : '这一轮已经结束，详情请在 Mac 上查看。'
-    updateJob(id, { result, status: 'ready', index: 0, retryAt: 0 })
+    const sticker = job.mode === 'chat' && store.state.settings.autoSticker
+      ? store.state.media.find(item => item.id === stickerId)
+      : undefined
+    updateJob(id, { result, status: 'ready', index: 0, retryAt: 0, stickerId: sticker?.id })
     if (job.mode === 'chat') addDiaryNote('assistant', result)
   }
 
@@ -281,20 +330,24 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
 
   async function sendExtras(route, job) {
     if (route.signal.aborted || job.failed || job.mode !== 'chat') return
+    const settings = store.state.settings
+    if (job.stickerId && settings.autoSticker) {
+      const item = store.state.media.find(item => item.id === job.stickerId)
+      if (item) {
+        try {
+          await sendImage(route, item)
+        } catch (error) {
+          if (!route.signal.aborted) lastError = report(error)
+        }
+      }
+    }
     try {
-      if (job.voice) {
-        const bytes = await voiceMaker(job.result, store.state.settings.voice, dataDir, route.signal)
-        await ilink.sendMedia({ ...route, kind: 'file', bytes, name: '鲸屿的语音.wav', clientId: `${job.id}-voice` })
+      if (job.voice && settings.voiceMode !== 'off') {
+        const { bytes, filename } = await makeVoice(job.result, settings, route.signal)
+        await ilink.sendMedia({ ...route, kind: 'file', bytes, name: filename, clientId: `${job.id}-voice` })
       }
     } catch {
       if (!route.signal.aborted) lastError = '文字已经发送。语音生成或发送失败，请在 Mac 检查音色。'
-    }
-    if (store.state.settings.autoSticker) {
-      try {
-        await sendSticker(route, '', job.result)
-      } catch (error) {
-        if (!route.signal.aborted) lastError = report(error)
-      }
     }
   }
 
@@ -587,6 +640,25 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
         syncWakeLock()
         break
       }
+      case 'saveVoice': {
+        const settings = await validateSettings(voiceSettings(data.settings), store.state.settings)
+        const key = checkedKey(data.apiKey ?? '')
+        const voiceKeys = { ...store.state.voiceKeys }
+        if (settings.voiceProvider !== 'system') {
+          const endpoint = resolveVoiceEndpoint(settings.voiceProvider, settings.voiceEndpoint)
+          if (data.clearKey === true) delete voiceKeys[settings.voiceProvider]
+          else if (key) voiceKeys[settings.voiceProvider] = { endpoint, key }
+        }
+        store.update({ settings, voiceKeys })
+        break
+      }
+      case 'previewVoice': {
+        const text = typeof data.text === 'string' ? data.text.trim() : ''
+        if (!text || Array.from(text).length > 640) throw new Error('请输入 1 至 640 字的试听文字。')
+        const settings = await validateSettings(voiceSettings(data.settings), store.state.settings)
+        const { bytes, filename } = await makeVoice(text, settings, localSynthesis.signal, checkedKey(data.apiKey ?? ''))
+        return { audio: bytes.toString('base64'), filename }
+      }
       case 'upload': store.upload(data); break
       case 'saveMedia': store.saveMedia(data); break
       case 'deleteMedia': store.deleteMedia(data.id); break
@@ -642,6 +714,7 @@ export function createController({ dataDir, ilink, connectDsh, makeStorage = cre
   async function close() {
     if (stopped) return
     stopped = true
+    localSynthesis.abort()
     clearInterval(diaryTimer)
     syncWakeLock()
     stopOperation()

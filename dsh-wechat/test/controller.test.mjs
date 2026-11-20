@@ -33,6 +33,7 @@ async function testRuntime(t, { connected = true, start = true, reject = () => f
   const outbound = []
   const requests = []
   const transports = []
+  const syntheses = []
   let callbacks
   const controller = createController({
     dataDir,
@@ -40,6 +41,10 @@ async function testRuntime(t, { connected = true, start = true, reject = () => f
     clock: () => date,
     retryMs: 20,
     async voiceMaker() { return Buffer.from('mock voice') },
+    async apiVoiceMaker(options) {
+      syntheses.push(options)
+      return { bytes: Buffer.from('mock api voice'), filename: '语音.wav' }
+    },
     ilink: {
       async startLogin() {
         return { qrContent: 'https://weixin.qq.com/jingyu-test', qrcode: '123', baseUrl: credentials.baseUrl }
@@ -71,7 +76,7 @@ async function testRuntime(t, { connected = true, start = true, reject = () => f
     await rm(dataDir, { recursive: true, force: true })
   })
   if (start) controller.start()
-  return { controller, store, workspace, inbound, outbound, requests, callbacks, transports }
+  return { controller, store, workspace, inbound, outbound, requests, callbacks, transports, syntheses }
 }
 
 test('only the bound owner can submit; everyday and ordinary-language work use native mode routes', async t => {
@@ -190,4 +195,44 @@ test('long work reply is sent as readable report and explicit file retrieval sta
   await writeFile(join(workspace, '..', '其他.txt'), '不外发')
   assert.equal((await readWorkFile(workspace, '报告.txt')).bytes.toString(), '内容')
   await assert.rejects(readWorkFile(workspace, '../其他.txt'))
+})
+
+test('remote voice credentials are private, bound to an endpoint, and used by optional WeChat audio', async t => {
+  const { controller, inbound, outbound, requests, callbacks, syntheses } = await testRuntime(t)
+  const settings = {
+    voiceProvider: 'custom', voiceEndpoint: 'https://audio.example/v1',
+    voiceMode: 'always', voiceModel: 'sample-model', voiceId: 'sample-voice',
+  }
+  const saved = await controller.action('saveVoice', { settings, apiKey: 'synthetic-test-key' })
+  assert.equal(saved.voiceKeyConfigured, true)
+  assert.ok(!JSON.stringify(saved).includes('synthetic-test-key'))
+  const audio = await controller.action('previewVoice', { settings, text: '本机试听' })
+  assert.equal(Buffer.from(audio.audio, 'base64').toString(), 'mock api voice')
+  assert.equal(syntheses[0].apiKey, 'synthetic-test-key')
+  await controller.action('previewVoice', { settings: { ...settings, voiceEndpoint: 'https://different.example/v1' }, text: '检查范围' })
+  assert.equal(syntheses[1].apiKey, '')
+  inbound.push(message('voice', '晚上好'))
+  const chat = await until(() => requests[0])
+  await callbacks.onReply({ id: chat.id, text: '晚上好，今天怎么样？' })
+  await until(() => outbound.some(item => item.kind === 'file' && item.name === '语音.wav'))
+  assert.equal(syntheses[2].apiKey, 'synthetic-test-key')
+  assert.equal((await controller.action('saveVoice', { settings, clearKey: true })).voiceKeyConfigured, false)
+})
+
+test('a normal reply sends only text unless the companion picks a sticker from its library', async t => {
+  const { controller, store, inbound, outbound, requests, callbacks } = await testRuntime(t)
+  await controller.action('save', { autoSticker: true })
+  const png = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64')
+  const status = await controller.action('upload', { base64: png, mime: 'image/png', name: '开心.png' })
+  const sticker = status.media[0]
+  assert.deepEqual(callbacks.getStickers(), [sticker])
+  inbound.push(message('plain', '今天又下雨了'))
+  const plain = await until(() => requests[0])
+  await callbacks.onReply({ id: plain.id, text: '记得带伞。' })
+  await until(() => store.state.account.jobs.some(job => job.id === plain.id && job.status === 'sent'))
+  assert.equal(outbound.some(item => item.kind === 'image'), false)
+  inbound.push(message('decided', '今天通过考试了'))
+  const decided = await until(() => requests[1])
+  await callbacks.onReply({ id: decided.id, text: '恭喜！', stickerId: sticker.id })
+  assert.equal((await until(() => outbound.find(item => item.kind === 'image'))).name, '开心.png')
 })

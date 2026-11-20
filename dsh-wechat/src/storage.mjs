@@ -9,13 +9,25 @@ export const defaultSettings = Object.freeze({
   personality: '你是一位生活在海岛上的 AI 陪伴。说中文，语气温暖自然，有一点幽默。先认真听我说，再回应；表达亲近时尊重彼此的界限。',
   ownerName: '你',
   aliases: '鲸鱼娘',
+  age: '',
+  job: '',
+  appearance: '',
   background: '',
+  rolePrompt: '',
+  stylePrompt: '',
+  privatePrompt: '',
+  groupPrompt: '',
+  boundaries: '',
   memory: '',
   publicMemory: '',
   workEnabled: false,
   stayAwake: false,
   workspace: '',
   voiceMode: 'on-request',
+  voiceProvider: 'system',
+  voiceEndpoint: '',
+  voiceModel: '',
+  voiceId: '',
   diaryEnabled: false,
   diaryTime: '21:30',
   groupEnabled: false,
@@ -40,7 +52,13 @@ export async function workspacePath(input) {
 
 export async function validateSettings(data, previous) {
   const settings = { ...previous }
-  for (const [key, max] of Object.entries({ name: 48, ownerName: 48, aliases: 300, personality: 8000, background: 8000, memory: 16000, publicMemory: 8000, workspace: 4096, voice: 128, diaryTime: 5, groupIds: 4096 })) {
+  for (const [key, max] of Object.entries({
+    name: 48, ownerName: 48, aliases: 300, age: 20, job: 5000, appearance: 5000,
+    personality: 8000, background: 8000, rolePrompt: 24000, stylePrompt: 16000,
+    privatePrompt: 16000, groupPrompt: 16000, boundaries: 16000, memory: 16000,
+    publicMemory: 8000, workspace: 4096, voice: 128, voiceEndpoint: 2048, voiceModel: 256, voiceId: 256,
+    diaryTime: 5, groupIds: 4096,
+  })) {
     if (!Object.hasOwn(data, key)) continue
     if (typeof data[key] !== 'string' || data[key].length > max || data[key].includes('\0')) {
       throw new Error(`「${key}」的内容格式不正确或太长。`)
@@ -59,6 +77,12 @@ export async function validateSettings(data, previous) {
   if (Object.hasOwn(data, 'voiceMode')) {
     if (!['off', 'on-request', 'always'].includes(data.voiceMode)) throw new Error('请选择语音回复方式。')
     settings.voiceMode = data.voiceMode
+  }
+  if (Object.hasOwn(data, 'voiceProvider')) {
+    if (!['system', 'breezeblue', 'minimax', 'siliconflow', 'custom'].includes(data.voiceProvider)) {
+      throw new Error('请选择语音合成服务。')
+    }
+    settings.voiceProvider = data.voiceProvider
   }
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(settings.diaryTime)) throw new Error('日记时间请用 24 小时制。')
   const groupIds = [...new Set(settings.groupIds.split(/\r?\n/u).map(id => id.trim()).filter(Boolean))]
@@ -93,7 +117,7 @@ export function createStorage(dataDir) {
   const file = join(dataDir, 'settings.json')
   mkdirSync(directory, { recursive: true, mode: 0o700 })
   chmodSync(dataDir, 0o700)
-  const defaults = { settings: { ...defaultSettings }, media: [], account: null, diary: {}, diaryNotes: {}, groupKey: null }
+  const defaults = { settings: { ...defaultSettings }, media: [], account: null, diary: {}, diaryNotes: {}, groupKey: null, voiceKeys: {} }
   let state
   try {
     state = { ...defaults, ...JSON.parse(readFileSync(file, 'utf8')) }

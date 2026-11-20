@@ -3,7 +3,7 @@ import { createServer } from 'node:http';
 
 const allowedActions = new Set([
   'status', 'save', 'login', 'logout', 'pin', 'upload', 'deleteMedia', 'voices', 'testChat',
-  'saveMedia', 'listDiary', 'writeDiary', 'testWork',
+  'saveMedia', 'listDiary', 'writeDiary', 'testWork', 'saveVoice', 'previewVoice',
 ]);
 const maximumBody = 7 * 1024 * 1024;
 const maximumGroupBody = 32 * 1024;
@@ -318,7 +318,7 @@ function page(nonce, csrf) {
         <section class="card" aria-labelledby="media-heading">
           <div class="heading">
             <h2 id="media-heading">表情包</h2>
-            <p>在微信发送 <code>/sticker</code> 随机取一张，或发送 <code>/sticker 名称</code> 选一张。</p>
+            <p>打开自动表情后，鲸屿会根据对话自行决定是否发图。标签和描述可以帮助她选得更贴切。</p>
           </div>
           <ul id="media-list" class="media-list" hidden></ul>
           <p class="help" id="media-empty">还没有上传表情图片。</p>
@@ -402,7 +402,7 @@ function page(nonce, csrf) {
         <section class="card" aria-labelledby="voice-heading">
           <div class="heading">
             <h2 id="voice-heading">声音与表情</h2>
-            <p>语音使用 Mac 的系统音色，通过音频文件发到微信。</p>
+            <p>语音通过音频文件发到微信。在线语音服务可以在 Mac 的鲸屿 App 中设置。</p>
           </div>
           <fieldset disabled id="voice-fields">
             <label>什么时候发语音
@@ -417,7 +417,7 @@ function page(nonce, csrf) {
               <datalist id="voices-list"></datalist>
             </label>
             <p class="help">只想听这一次时，在微信发送 <code>/voice 你的问题</code>。</p>
-            <label class="check"><input name="autoSticker" type="checkbox">聊天时允许鲸屿选一张表情</label>
+            <label class="check"><input name="autoSticker" type="checkbox">由鲸屿决定何时发表情</label>
           </fieldset>
         </section>
         <section class="card" aria-labelledby="schedule-heading">

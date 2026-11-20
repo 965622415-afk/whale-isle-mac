@@ -2,4 +2,4 @@
 
 在微信里与鲸屿聊天、向 Mac 上的 DeepSeek Harness 派发任务，并在微信接收工作结果。
 
-[安装与使用说明](dsh-wechat/README.md) · [插件源码](dsh-wechat/)
+[DSH 插件安装与使用](dsh-wechat/README.md) · [macOS 独立设置 App](dsh-wechat/mac-app/README.md)
