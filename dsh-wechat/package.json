@@ -1,6 +1,6 @@
 {
   "name": "dsh-jingyu",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "鲸屿：DSH 的微信 AI 陪伴与远程工作插件",
   "license": "AGPL-3.0-only",
   "type": "module",

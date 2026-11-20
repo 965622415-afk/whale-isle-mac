@@ -7,13 +7,14 @@ import { splitIlinkText } from './ilink.mjs'
 import { deliveries, readWorkFile } from './delivery.mjs'
 import { diaryClock, diaryPrompt } from './diary.mjs'
 import { resolveVoiceEndpoint, speakWithAPI } from './tts.mjs'
+import { asksForVoice, asksForWork, wasWorking } from './intent.mjs'
 
 const help = [
   '直接发消息，和鲸屿聊天。',
-  '说「帮我在电脑上检查项目启动失败的原因」，鲸屿会交给 Mac 上的 DSH。',
-  '说「开始工作」切到工作模式，「结束工作」切回陪伴。也可以用 /work 加上任务。',
+  '聊天和工作共用这一个微信私聊。直接说「帮我搜索最近的热点短剧」或「帮我检查项目为什么启动失败」。',
+  '有工作请求时，鲸屿会通过 Mac 上的 DSH 处理。',
   '说「任务结果」取回最近一次工作结果，/file 报告.pdf 可取回工作目录里的文件。',
-  '/voice 问题 · /sticker 文件名或标签 · /diary · /status',
+  '想听音频时可以说「用语音回复我」。/diary 查看最近的日记，/status 查看连接。',
 ].join('\n')
 const maxJobs = 60
 
@@ -44,14 +45,6 @@ function readMessage(message) {
   return { id, text, to: message.from_user_id, contextToken: message.context_token }
 }
 
-function modeFor(text, workMode) {
-  if (/^聊天[:：]\s*\S/u.test(text)) return { mode: 'chat', text: text.replace(/^聊天[:：]\s*/u, '') }
-  if (workMode || /^(?:帮我(?:在|用)(?:电脑|Mac|DSH)(?:上)?|请(?:在|用)(?:电脑|Mac|DSH)(?:上)?|让(?:电脑|Mac|DSH)|(?:新任务|工作任务)[：:\s])/iu.test(text)) {
-    return { mode: 'work', text }
-  }
-  return { mode: 'chat', text }
-}
-
 function groupFault(status) {
   return Object.assign(new Error('群聊请求未完成。'), { status })
 }
@@ -67,6 +60,7 @@ export function createController({
   let connection = store.state.account ? 'connected' : 'disconnected'
   let message = store.state.account ? '已绑定。正在收取微信消息。' : '请用微信扫码连接鲸屿。'
   let lastError = ''
+  let voiceProblem = ''
   let operation
   let pairing
   let diaryTimer
@@ -82,7 +76,7 @@ export function createController({
   async function status() {
     const sessions = await dsh.sessions()
     return {
-      apiVersion: 3,
+      apiVersion: 4,
       settings: store.state.settings,
       media: store.state.media,
       connection,
@@ -94,8 +88,8 @@ export function createController({
       claimCode: pairing?.claimCode,
       groupKey: store.state.settings.groupEnabled ? store.state.groupKey : undefined,
       voiceKeyConfigured: Boolean(voiceCredentials(store.state.settings)),
+      voiceProblem,
       chatId: sessions.find(entry => entry.mode === 'chat')?.id,
-      workId: sessions.findLast(entry => entry.mode === 'work')?.id,
     }
   }
 
@@ -314,8 +308,8 @@ export function createController({
     const signal = operation?.signal
     if (!job || mode !== 'work' || !signal || signal.aborted) return
     const text = kind === 'approval'
-      ? '这项工作正在等 DSH 审批。请在 Mac 的「鲸屿 · 工作」中确认，确认后结果会发回微信。'
-      : '鲸屿有一个问题需要你回答。请在 Mac 的「鲸屿 · 工作」中查看。'
+      ? '这项工作正在等 DSH 审批。请在 Mac 上打开这条鲸屿微信会话确认，之后结果会发回微信。'
+      : '鲸屿有一个问题需要你回答。请在 Mac 上打开这条鲸屿微信会话查看。'
     const suffix = createHash('sha256').update(String(noticeId || kind)).digest('hex').slice(0, 10)
     await sendText(jobRoute(account, job, signal), text, `attention-${suffix}`).catch(error => {
       if (!signal.aborted) lastError = report(error)
@@ -329,7 +323,7 @@ export function createController({
   }
 
   async function sendExtras(route, job) {
-    if (route.signal.aborted || job.failed || job.mode !== 'chat') return
+    if (route.signal.aborted || job.failed) return
     const settings = store.state.settings
     if (job.stickerId && settings.autoSticker) {
       const item = store.state.media.find(item => item.id === job.stickerId)
@@ -341,13 +335,22 @@ export function createController({
         }
       }
     }
+    if (job.voice && settings.voiceMode !== 'off') await sendVoice(route, job, settings)
+  }
+
+  async function sendVoice(route, job, settings) {
+    let failedAt = '音频合成'
     try {
-      if (job.voice && settings.voiceMode !== 'off') {
-        const { bytes, filename } = await makeVoice(job.result, settings, route.signal)
-        await ilink.sendMedia({ ...route, kind: 'file', bytes, name: filename, clientId: `${job.id}-voice` })
+      const { bytes, filename } = await makeVoice(job.result, settings, route.signal)
+      failedAt = '微信音频文件发送'
+      await ilink.sendMedia({ ...route, kind: 'file', bytes, name: filename, clientId: `${job.id}-voice` })
+      voiceProblem = ''
+    } catch (error) {
+      if (route.signal.aborted) return
+      voiceProblem = `${failedAt}失败。${report(error)}`
+      if (job.voiceRequested) {
+        await sendText(route, `文字已发出。${voiceProblem}`, 'voice-error').catch(() => {})
       }
-    } catch {
-      if (!route.signal.aborted) lastError = '文字已经发送。语音生成或发送失败，请在 Mac 检查音色。'
     }
   }
 
@@ -382,7 +385,10 @@ export function createController({
 
   async function submitJob(job) {
     try {
-      await dsh.submit({ id: job.id, text: job.text, mode: job.mode, cwd: job.cwd })
+      await dsh.submit({
+        id: job.id, text: job.text, mode: job.mode, cwd: job.cwd,
+        legacyWork: job.mode === 'work' && job.singleSession !== true,
+      })
     } catch (error) {
       lastError = report(error)
       updateJob(job.id, { result: lastError, failed: true, status: 'ready' })
@@ -408,14 +414,8 @@ export function createController({
     const account = accountFor(route.credentials)
     const settings = store.state.settings
     if (!account) return
-    if (/^开始工作[。！!]?$/u.test(text)) {
-      if (!settings.workEnabled) return sendText(route, '请先在 Mac 的鲸屿设置中选择项目文件夹，并开启远程工作。')
-      updateAccount(route.credentials, { workMode: true })
-      return sendText(route, '已进入工作模式。直接说任务即可。说「结束工作」切回陪伴。')
-    }
-    if (/^(?:结束工作|回到陪聊|切回陪聊)[。！!]?$/u.test(text)) {
-      updateAccount(route.credentials, { workMode: false })
-      return sendText(route, '已切回陪伴。已经提交的工作可以继续运行。')
+    if (/^(?:开始工作|结束工作|切回(?:聊天|陪聊)(?:模式)?|回到(?:聊天|陪聊)(?:模式)?)[。！!]?$/u.test(text)) {
+      return sendText(route, '现在直接在这里聊天或交代任务就好。已提交的任务会继续运行。')
     }
     if (/^(?:任务结果|工作结果|查看结果|\/result)[。！!]?$/iu.test(text)) return showResult(route)
     const match = /^\/(help|status|sticker|work|voice|claim|file|diary)(?=\s|$)\s*([\s\S]*)$/iu.exec(text)
@@ -423,7 +423,7 @@ export function createController({
     const argument = match?.[2].trim() || ''
     if (command === 'help') return sendText(route, help)
     if (command === 'status') return sendText(route, settings.workEnabled
-      ? `鲸屿已连接，远程工作已开启。当前模式：${account.workMode ? '工作' : '陪伴'}。`
+      ? '鲸屿已连接，远程工作已开启。直接在这条微信私聊交代任务即可。'
       : '鲸屿已连接，远程工作目前关闭。')
     if (command === 'claim') return sendText(route, '鲸屿已经绑定了这位微信用户。')
     if (command === 'diary') {
@@ -446,20 +446,19 @@ export function createController({
     if ((command === 'work' || command === 'voice') && !argument) {
       return sendText(route, command === 'work' ? '请告诉我你想在电脑上做什么。' : '请在 /voice 后加上你想问的内容。')
     }
-    if (command === 'voice' && settings.voiceMode === 'off') return sendText(route, '请先在 Mac 面板开启语音回复。')
-
-    const selected = command === 'work' || command === 'voice'
-      ? { mode: command === 'work' ? 'work' : 'chat', text: argument }
-      : modeFor(text, account.workMode)
+    const voiceRequested = command === 'voice' || asksForVoice(text)
+    if (voiceRequested && settings.voiceMode === 'off') return sendText(route, '语音回复现在关闭。可在 Mac 的鲸屿 App「语音发送」里打开。')
+    const content = command === 'work' || command === 'voice' ? argument : text
+    const workRequested = command === 'work' || asksForWork(content, wasWorking(account.jobs, Date.now()))
     let cwd
-    if (selected.mode === 'work') {
-      if (!settings.workEnabled) return sendText(route, '请先在 Mac 的鲸屿设置中选择项目文件夹，并开启远程工作。')
+    if (settings.workEnabled) {
       try {
         cwd = await workspacePath(settings.workspace)
       } catch (error) {
-        return sendText(route, report(error))
+        if (workRequested) lastError = report(error)
       }
     }
+    const mode = workRequested && cwd ? 'work' : 'chat'
     route.signal.throwIfAborted()
     const current = accountFor(route.credentials)
     if (!current || getJob(route.id)) return
@@ -468,8 +467,9 @@ export function createController({
       return sendText(route, '待处理消息较多，请稍后再发。')
     }
     const job = {
-      ...selected, id: route.id, cwd, contextToken: route.contextToken, status: 'pending',
-      voice: command === 'voice' || (selected.mode === 'chat' && settings.voiceMode === 'always'),
+      mode, text: content, id: route.id, cwd, contextToken: route.contextToken,
+      status: 'pending', createdAt: Date.now(), singleSession: true,
+      voiceRequested, voice: voiceRequested || settings.voiceMode === 'always',
     }
     const retained = [...jobs]
     if (retained.length >= maxJobs) {
@@ -531,7 +531,7 @@ export function createController({
             const sameOwner = previous?.credentials.ownerId === credentials.ownerId
             const retained = sameOwner ? (previous.jobs ?? []).map(job => ({ ...job, retryAt: 0 })) : []
             store.update({
-              account: { credentials, cursor, seen: [incoming.id], jobs: retained, contextToken: incoming.contextToken, workMode: false },
+              account: { credentials, cursor, seen: [incoming.id], jobs: retained, contextToken: incoming.contextToken },
               ...(sameOwner ? {} : { diaryNotes: {}, diary: {} }),
             })
             pendingClaim = undefined
@@ -636,7 +636,6 @@ export function createController({
       case 'save': {
         const settings = await validateSettings(data, store.state.settings)
         store.update({ settings, ...(settings.groupEnabled && !store.state.groupKey ? { groupKey: randomBytes(32).toString('hex') } : {}) })
-        if (!settings.workEnabled && store.state.account?.workMode) updateAccount(store.state.account.credentials, { workMode: false })
         syncWakeLock()
         break
       }
@@ -657,6 +656,7 @@ export function createController({
         if (!text || Array.from(text).length > 640) throw new Error('请输入 1 至 640 字的试听文字。')
         const settings = await validateSettings(voiceSettings(data.settings), store.state.settings)
         const { bytes, filename } = await makeVoice(text, settings, localSynthesis.signal, checkedKey(data.apiKey ?? ''))
+        voiceProblem = ''
         return { audio: bytes.toString('base64'), filename }
       }
       case 'upload': store.upload(data); break
@@ -692,7 +692,7 @@ export function createController({
         const settings = store.state.settings
         if (!settings.workEnabled) throw new Error('请先保存工作目录并开启远程工作。')
         const cwd = await workspacePath(settings.workspace)
-        message = '只读工作测试已提交，请到 DSH 的「鲸屿 · 工作」查看。'
+        message = '只读工作测试已提交，请到 DSH 的鲸屿微信会话查看。'
         await dsh.submit({
           id: `jingyu-test-work-${randomUUID()}`, mode: 'work', cwd,
           text: '只做连通性测试：查看当前工作目录，列出最多五个文件或文件夹的名称。不要读取文件内容，不要修改文件，不要联网。',
@@ -702,7 +702,7 @@ export function createController({
       case 'testChat': {
         const text = typeof data.text === 'string' ? data.text.trim() : ''
         if (!text || text.length > 12000) throw new Error('请输入要发给鲸屿的测试消息。')
-        message = '已提交。打开 DSH 的「鲸屿 · 陪伴」查看对话。'
+        message = '已提交。请打开 DSH 的鲸屿微信会话查看。'
         await dsh.submit({ id: `jingyu-test-${randomUUID()}`, text, mode: 'chat' })
         break
       }

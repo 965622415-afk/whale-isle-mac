@@ -111,8 +111,8 @@ struct BridgeStatus: Decodable {
     let claimCode: String?
     let groupKey: String?
     let voiceKeyConfigured: Bool?
+    let voiceProblem: String?
     let chatId: String?
-    let workId: String?
 }
 
 struct EmptyPayload: Encodable {}

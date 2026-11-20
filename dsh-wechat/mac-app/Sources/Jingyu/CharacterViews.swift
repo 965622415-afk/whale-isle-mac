@@ -510,6 +510,11 @@ struct VoiceView: View {
             } else {
                 apiSettings
             }
+            CardHint("在微信说「用语音回复我」可单次请求。ClawBot 会以音频文件发送。")
+            if let problem = model.status?.voiceProblem, !problem.isEmpty {
+                Text(problem).font(.system(size: 12)).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             HStack(spacing: 10) {
                 Button("保存语音设置") { saveVoice() }
                     .buttonStyle(CharacterButton(primary: true))
@@ -527,8 +532,8 @@ struct VoiceView: View {
         CharacterField("什么时候发语音") {
             Picker("什么时候发语音", selection: $model.settings.voiceMode) {
                 Text("关闭语音").tag("off")
-                Text("我用 /voice 时").tag("on-request")
-                Text("日常聊天也发语音").tag("always")
+                Text("我要求语音时").tag("on-request")
+                Text("每条回复都发音频").tag("always")
             }
             .labelsHidden()
         }

@@ -300,8 +300,7 @@ function page(nonce, csrf) {
             在手机微信里打开鲸屿的对话，并发送 <code id="claim-code"></code>。
           </div>
           <dl class="session" id="sessions" hidden>
-            <div id="chat-session" hidden><dt>聊天会话</dt><dd id="chat-id"></dd></div>
-            <div id="work-session" hidden><dt>工作会话</dt><dd id="work-id"></dd></div>
+            <div id="chat-session" hidden><dt>微信私聊会话</dt><dd id="chat-id"></dd></div>
           </dl>
           <p class="notice error" id="last-error" hidden></p>
           <hr class="divider">
@@ -402,21 +401,21 @@ function page(nonce, csrf) {
         <section class="card" aria-labelledby="voice-heading">
           <div class="heading">
             <h2 id="voice-heading">声音与表情</h2>
-            <p>语音通过音频文件发到微信。在线语音服务可以在 Mac 的鲸屿 App 中设置。</p>
+            <p>ClawBot 通过音频文件发到微信。在线语音服务和发送状态可以在 Mac 的鲸屿 App 中查看。</p>
           </div>
           <fieldset disabled id="voice-fields">
             <label>什么时候发语音
               <select name="voiceMode">
                 <option value="off">关闭语音</option>
-                <option value="on-request">我用 /voice 时</option>
-                <option value="always">日常聊天也发语音</option>
+                <option value="on-request">我要求语音时</option>
+                <option value="always">每条回复都发音频</option>
               </select>
             </label>
             <label>系统音色
               <input name="voice" type="text" list="voices-list" placeholder="跟随 Mac 默认音色" maxlength="100">
               <datalist id="voices-list"></datalist>
             </label>
-            <p class="help">只想听这一次时，在微信发送 <code>/voice 你的问题</code>。</p>
+            <p class="help">只想听这一次时，可以直接说「用语音回复我」。</p>
             <label class="check"><input name="autoSticker" type="checkbox">由鲸屿决定何时发表情</label>
           </fieldset>
         </section>
@@ -433,7 +432,7 @@ function page(nonce, csrf) {
         <section class="card" aria-labelledby="work-heading">
           <div class="heading">
             <h2 id="work-heading">远程工作</h2>
-            <p>微信私聊发送 <code>开始工作</code>，接着直接说「帮我在电脑上检查这个项目」。发送 <code>结束工作</code> 回到陪伴对话。</p>
+            <p>在同一个微信私聊里直接说「帮我搜索最近的热点短剧」，也可以接着闲聊。</p>
           </div>
           <fieldset disabled id="work-fields">
             <label class="check"><input name="workEnabled" type="checkbox">启用远程工作</label>
@@ -445,8 +444,8 @@ function page(nonce, csrf) {
             <p class="help">在私聊微信已连接、远程工作已开启时生效。如果合盖触发 Mac 休眠，远程工作会暂停。</p>
             <p class="help">权限审批会在微信显示状态，请在 Mac 的 DSH 里处理。</p>
             <p class="help">发送 <code>任务结果</code> 查看最近的工作结果。结果很长时会另附报告。发送 <code>/file 相对路径</code> 取工作区里的文件。</p>
-            <div class="actions"><button class="secondary" id="test-work" type="button">测试工作会话</button></div>
-            <p class="help">保存设置后可运行测试。测试会创建 DSH 工作会话，请它只读列出最多五个文件名。之后可在 DSH 中设置权限。</p>
+            <div class="actions"><button class="secondary" id="test-work" type="button">测试任务</button></div>
+            <p class="help">测试会在 DSH 的同一条鲸屿微信会话里，请它只读列出最多五个文件名。</p>
           </fieldset>
         </section>
         <div class="save">
@@ -624,11 +623,9 @@ function page(nonce, csrf) {
       get('pin-form').hidden = !status.pinRequired;
       get('claim').hidden = !status.claimCode;
       get('claim-code').textContent = status.claimCode ? '/claim ' + status.claimCode : '';
-      get('sessions').hidden = !status.chatId && !status.workId;
+      get('sessions').hidden = !status.chatId;
       get('chat-session').hidden = !status.chatId;
-      get('work-session').hidden = !status.workId;
       get('chat-id').textContent = status.chatId || '';
-      get('work-id').textContent = status.workId || '';
     }
 
     async function refresh() {

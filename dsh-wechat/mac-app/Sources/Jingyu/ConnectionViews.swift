@@ -33,7 +33,7 @@ struct ConnectionView: View {
             }
 
             Section("测试 DSH") {
-                Text("测试会把这条消息发进 DSH 的「鲸屿 · 陪伴」会话。")
+                Text("测试消息会进入 DSH 的鲸屿微信会话。")
                     .foregroundStyle(.secondary)
                 TextField("测试消息", text: $testMessage)
                     .onSubmit(sendTest)
@@ -183,11 +183,11 @@ struct WorkView: View {
                 HStack {
                     Button("保存", action: model.save)
                         .buttonStyle(.borderedProminent)
-                    Button("测试工作会话", action: model.testWork)
+                    Button("测试任务", action: model.testWork)
                         .disabled(!canTest)
                     Button("打开 DSH", action: model.openDSH)
                 }
-                if let status = model.status, !status.message.isEmpty, status.workId != nil {
+                if let status = model.status, !status.message.isEmpty, status.chatId != nil {
                     Text(status.message)
                         .foregroundStyle(.secondary)
                 }
@@ -196,12 +196,11 @@ struct WorkView: View {
             }
 
             Section("微信里怎么用") {
-                example("派任务", "帮我在电脑上检查这个项目")
-                example("连续派活", "开始工作")
-                example("切回陪聊", "结束工作")
+                example("派任务", "帮我搜索最近的热点短剧")
+                example("接着聊", "辛苦啦，晚上吃了什么？")
                 example("取回结果", "任务结果")
                 example("取回文件", "/file 报告.pdf")
-                Text("DSH 需要审批时会通过微信提醒。在 Mac 的 DSH 中处理后，任务即可继续。")
+                Text("聊天和任务都留在同一条会话里。DSH 需要审批时会通过微信提醒，在 Mac 的 DSH 里处理即可。")
                     .foregroundStyle(.secondary)
             }
         }

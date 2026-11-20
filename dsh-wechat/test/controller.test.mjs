@@ -99,13 +99,25 @@ test('only the bound owner can submit; everyday and ordinary-language work use n
   await until(() => store.state.account.jobs.find(job => job.id === work.id && job.status === 'sent'))
 })
 
-test('starts or ends work mode by message without /dsh', async t => {
-  const { controller, workspace, inbound, requests } = await testRuntime(t)
+test('a legacy sticky work flag is ignored and ordinary requests leave chat and work in the same private seam', async t => {
+  const { controller, store, workspace, inbound, requests, outbound } = await testRuntime(t)
   await controller.action('save', { workspace, workEnabled: true })
-  inbound.push(message('switch-on', '开始工作'), message('task', '看看那个文档'),
-    message('switch-off', '结束工作'), message('chat', '今天好冷'))
-  await until(() => requests.length === 2)
-  assert.deepEqual(requests.map(item => item.mode), ['work', 'chat'])
+  store.update({ account: { ...store.state.account, workMode: true } })
+  inbound.push(message('before', '早呀'), message('task', '你可以帮我搜索最近的热点短剧吗'),
+    message('follow-up', '继续'), message('old-command', '切回聊天模式'), message('after', '今天好冷'))
+  await until(() => requests.length === 4)
+  assert.deepEqual(requests.map(item => item.mode), ['chat', 'work', 'work', 'chat'])
+  assert.ok(requests.every(item => !item.legacyWork))
+  assert.deepEqual(requests.map(item => item.text), ['早呀', '你可以帮我搜索最近的热点短剧吗', '继续', '今天好冷'])
+  assert.ok(outbound.some(item => item.text?.includes('直接在这里聊天或交代任务')))
+})
+
+test('one history seam keeps old unfinished task references without setting a sticky mode', async t => {
+  const { requests } = await testRuntime(t, {
+    preloaded: [{ id: 'old-pending-task', mode: 'work', cwd: '/tmp', status: 'pending', text: '旧工作' }],
+  })
+  const oldRequest = await until(() => requests[0])
+  assert.equal(oldRequest.legacyWork, true)
 })
 
 test('saves a failed delivery until the owner supplies a fresh reply token', async t => {
@@ -198,7 +210,7 @@ test('long work reply is sent as readable report and explicit file retrieval sta
 })
 
 test('remote voice credentials are private, bound to an endpoint, and used by optional WeChat audio', async t => {
-  const { controller, inbound, outbound, requests, callbacks, syntheses } = await testRuntime(t)
+  const { controller, workspace, inbound, outbound, requests, callbacks, syntheses } = await testRuntime(t)
   const settings = {
     voiceProvider: 'custom', voiceEndpoint: 'https://audio.example/v1',
     voiceMode: 'always', voiceModel: 'sample-model', voiceId: 'sample-voice',
@@ -216,6 +228,17 @@ test('remote voice credentials are private, bound to an endpoint, and used by op
   await callbacks.onReply({ id: chat.id, text: '晚上好，今天怎么样？' })
   await until(() => outbound.some(item => item.kind === 'file' && item.name === '语音.wav'))
   assert.equal(syntheses[2].apiKey, 'synthetic-test-key')
+  await controller.action('save', { workspace, workEnabled: true })
+  inbound.push(message('work-voice', '帮我搜索最近的热点短剧'))
+  const work = await until(() => requests[1])
+  assert.equal(work.mode, 'work')
+  await callbacks.onReply({ id: work.id, text: '整理好结果了。' })
+  await until(() => outbound.some(item => item.clientId === work.id + '-voice'))
+  await controller.action('save', { voiceMode: 'on-request' })
+  inbound.push(message('natural-voice', '你能用语音回复我吗'))
+  const voice = await until(() => requests[2])
+  await callbacks.onReply({ id: voice.id, text: '当然可以呀。' })
+  await until(() => outbound.some(item => item.clientId === voice.id + '-voice'))
   assert.equal((await controller.action('saveVoice', { settings, clearKey: true })).voiceKeyConfigured, false)
 })
 

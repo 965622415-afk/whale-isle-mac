@@ -242,7 +242,7 @@ private struct Workbench: View {
             DesktopPanel("把配置变成体验") {
                 shortcut("完善你的角色", "编辑称呼、性格和背景。", page: .persona)
                 Divider()
-                shortcut("看看她怎么说话", "把一条测试消息送到 DSH 陪伴会话。", page: .chat)
+                shortcut("看看她怎么说话", "把一条测试消息送到 DSH 的鲸屿微信会话。", page: .chat)
                 Divider()
                 shortcut("设置远程工作", "选择要交给鲸屿处理的 Mac 项目。", page: .work)
             }
@@ -269,15 +269,15 @@ private struct Workbench: View {
 
     private var modelPanel: some View {
         DesktopPanel("DeepSeek Harness 模型") {
-            Text("鲸屿使用你在 DSH 中配置的模型。陪伴、工作和群聊分别保存在原生会话中。")
+            Text("鲸屿使用你在 DSH 中配置的模型。同一个微信私聊里的聊天与任务会保存在同一个原生会话。")
                 .foregroundStyle(muted)
             Button("在 DSH 管理模型") { model.openDSH() }.buttonStyle(.borderedProminent)
         }
     }
 
     private var testPanel: some View {
-        DesktopPanel("陪伴会话试聊") {
-            Text("消息和回复可以在 DSH 的「鲸屿 · 陪伴」中查看。")
+        DesktopPanel("微信会话试聊") {
+            Text("消息和回复可以在 DSH 的鲸屿微信会话中查看。")
                 .foregroundStyle(muted)
             TextField("输入一条测试消息", text: $test)
                 .textFieldStyle(.roundedBorder)
@@ -297,7 +297,7 @@ private struct Workbench: View {
             DesktopPanel("运行状态") {
                 Text(model.online ? "鲸屿插件正在运行。" : "请打开 DSH 以使用微信收发和工作执行。")
                 Button("打开 DSH") { model.openDSH() }
-                LabeledContent("应用版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.2.0")
+                LabeledContent("应用版本", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.3.0")
             }
             DesktopPanel("旧版鲸屿资料") {
                 if let migration = model.migration {
@@ -373,11 +373,17 @@ private struct PromptsView: View {
             Button("保存提示词") { model.save() }.buttonStyle(.borderedProminent).disabled(!model.canSave)
         }
         DesktopPanel("人设预设") {
+            Text("应用后，下一条微信回复就会使用新设定。").foregroundStyle(.secondary)
             ForEach(model.presets) { preset in
                 HStack {
                     Text(preset.name)
                     Spacer()
-                    Button("使用预设") { model.usePreset(preset) }
+                    if model.isPresetActive(preset) {
+                        Text("正在使用").foregroundStyle(accent)
+                    } else {
+                        Button("应用预设") { model.usePreset(preset) }
+                            .disabled(!model.online || model.busy)
+                    }
                 }
                 Divider()
             }

@@ -210,10 +210,28 @@ final class JingyuModel: ObservableObject {
     }
 
     func usePreset(_ preset: CharacterPreset) {
-        for (name, value) in preset.fields {
-            if let key = Settings.characterFields[name] { settings[keyPath: key] = value }
+        guard online && !busy else { return }
+        let edits = preset.fields.filter { $0.key != "memory" && $0.key != "publicMemory" }
+        let before = settings
+        run {
+            let result: BridgeStatus = try await self.bridge.call("save", edits)
+            self.accept(result)
+            for name in edits.keys {
+                if let key = Settings.characterFields[name], self.settings[keyPath: key] == before[keyPath: key] {
+                    self.settings[keyPath: key] = result.settings[keyPath: key]
+                }
+            }
+            self.notice = "已应用「\(preset.name)」。鲸屿的下一条回复会使用这份人设。"
         }
-        notice = "预设已填入，点击保存应用到 DSH。"
+    }
+
+    func isPresetActive(_ preset: CharacterPreset) -> Bool {
+        guard let active = status?.settings else { return false }
+        let fields = preset.fields.filter { name, _ in name != "memory" && name != "publicMemory" }
+        return !fields.isEmpty && fields.allSatisfy { name, value in
+            guard let key = Settings.characterFields[name] else { return false }
+            return active[keyPath: key] == value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     func savePreset(_ name: String) {
