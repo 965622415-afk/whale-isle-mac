@@ -91,6 +91,9 @@ function profilePrompt(settings, mode, catalog = []) {
   if (settings.stylePrompt) prompt.push(`表达风格\n${settings.stylePrompt}`)
   if (settings.privatePrompt && (mode === 'chat' || mode === 'work')) prompt.push(`私聊表达规则\n${settings.privatePrompt}`)
   if (settings.boundaries) prompt.push(`角色表达边界\n${settings.boundaries}`)
+  if ((mode === 'chat' || mode === 'work') && settings.voiceMode && settings.voiceMode !== 'off') {
+    prompt.push('主人想听语音时，直接写下你要说的话。鲸屿的微信桥接负责把这段回复合成音频附件。你无需调用发送工具或说明发送步骤。')
+  }
   if (mode === 'chat' && catalog.length) prompt.push(stickerPrompt(catalog))
   return prompt.join('\n\n')
 }

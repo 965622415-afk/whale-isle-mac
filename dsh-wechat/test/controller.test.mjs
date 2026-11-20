@@ -235,7 +235,7 @@ test('remote voice credentials are private, bound to an endpoint, and used by op
   await callbacks.onReply({ id: work.id, text: '整理好结果了。' })
   await until(() => outbound.some(item => item.clientId === work.id + '-voice'))
   await controller.action('save', { voiceMode: 'on-request' })
-  inbound.push(message('natural-voice', '你能用语音回复我吗'))
+  inbound.push(message('natural-voice', '发条语音听听'))
   const voice = await until(() => requests[2])
   await callbacks.onReply({ id: voice.id, text: '当然可以呀。' })
   await until(() => outbound.some(item => item.clientId === voice.id + '-voice'))

@@ -414,7 +414,7 @@ export function createController({
     const account = accountFor(route.credentials)
     const settings = store.state.settings
     if (!account) return
-    if (/^(?:开始工作|结束工作|切回(?:聊天|陪聊)(?:模式)?|回到(?:聊天|陪聊)(?:模式)?)[。！!]?$/u.test(text)) {
+    if (/^(?:开始工作|结束工作|聊天模式|陪聊模式|工作模式|切回(?:聊天|陪聊)(?:模式)?|回到(?:聊天|陪聊)(?:模式)?)[。！!]?$/u.test(text)) {
       return sendText(route, '现在直接在这里聊天或交代任务就好。已提交的任务会继续运行。')
     }
     if (/^(?:任务结果|工作结果|查看结果|\/result)[。！!]?$/iu.test(text)) return showResult(route)

@@ -14,7 +14,7 @@ export function asksForWork(text, continuingWork = false) {
 
 export function asksForVoice(text) {
   if (/(?:别|不要|不用|不必)(?:给我|再)?(?:用语音|发语音)/u.test(text)) return false
-  return /(?:^|[，。；\s])(?:你(?:可以|能(?:不能)?|能否)?|请|帮我|给我|再)*(?:用语音(?:回(?:复)?|说|读|告诉我|再说)|发(?:一(?:条|段|下)|个)?语音|语音(?:回(?:复)?我|说一遍))|(?:用语音再说一遍|用语音读给我听)/u.test(text)
+  return /(?:^|[，。；\s])(?:你(?:可以|能(?:不能)?|能否)?|请|帮我|给我|再)*(?:用语音(?:回(?:复)?|说|读|告诉我|再说)|发(?:一?(?:条|段|下|个))?语音|语音(?:回(?:复)?我|说一遍))|(?:用语音再说一遍|用语音读给我听)/u.test(text)
 }
 
 export function wasWorking(jobs, now) {
