@@ -1,0 +1,17 @@
+{
+  "name": "dsh-jingyu",
+  "version": "1.0.0",
+  "description": "鲸屿：DSH 的微信 AI 陪伴与远程工作插件",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "files": ["src", "cordis.patch.yml", "integrations/astrbot"],
+  "engines": {"node": ">=22"},
+  "scripts": {"test": "node --test"},
+  "dsh": {"bundle": {"patch": "./cordis.patch.yml"}}
+}

@@ -1,0 +1,5 @@
+name: astrbot_plugin_jingyu
+display_name: 鲸屿群聊
+desc: 处理白名单群里点名鲸屿的文字消息
+version: v1.0.0
+author: 鲸屿
